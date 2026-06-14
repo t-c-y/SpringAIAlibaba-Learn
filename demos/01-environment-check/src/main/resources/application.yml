@@ -6,7 +6,7 @@ spring:
     name: spring-ai-alibaba-environment-check-demo
   ai:
     dashscope:
-      api-key: ${DASHSCOPE_API_KEY:}
+      api-key: ${DASHSCOPE_API_KEY:sk-78761a4510fa4d9fadbd8db12ab25ca3}
       chat:
         options:
           model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
