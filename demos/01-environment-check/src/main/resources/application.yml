@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: spring-ai-alibaba-environment-check-demo
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
