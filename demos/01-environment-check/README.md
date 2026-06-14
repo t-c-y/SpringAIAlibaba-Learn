@@ -351,7 +351,272 @@ src/main/java/com/example/springaialibaba/envcheck/EnvironmentCheckController.ja
 
 ---
 
-## 八、常见问题
+## 八、原理说明
+
+### 1. Spring AI Alibaba 是怎么接入模型的？
+
+本 Demo 的调用链路可以理解为：
+
+```text
+HTTP 请求
+  ↓
+EnvironmentCheckController
+  ↓
+ChatClient
+  ↓
+Spring AI ChatModel 抽象
+  ↓
+Spring AI Alibaba DashScope 实现
+  ↓
+DashScope / 百炼模型服务
+  ↓
+返回模型回答
+```
+
+关键点：
+
+- `ChatClient` 是 Spring AI 提供的高层聊天客户端。
+- Spring AI Alibaba 提供 DashScope / 百炼的具体实现。
+- 你在业务代码中主要使用 `ChatClient`，不需要直接拼接底层 HTTP 请求。
+- 这样做的好处是业务代码更稳定，后续切换模型或扩展能力更方便。
+
+---
+
+### 2. Starter 和自动配置的作用
+
+`pom.xml` 中引入了：
+
+```xml
+<dependency>
+    <groupId>com.alibaba.cloud.ai</groupId>
+    <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
+</dependency>
+```
+
+这个 Starter 会做几件事：
+
+1. 引入 Spring AI Alibaba 访问 DashScope 所需的依赖。
+2. 注册 DashScope 相关自动配置。
+3. 读取 `spring.ai.dashscope.*` 配置。
+4. 创建模型调用相关 Bean。
+5. 让你可以在代码中直接注入 `ChatClient.Builder`。
+
+所以你在 Controller 中可以直接写：
+
+```java
+public EnvironmentCheckController(ChatClient.Builder chatClientBuilder, ...) {
+    this.chatClient = chatClientBuilder.build();
+}
+```
+
+这就是 Spring Boot 自动配置带来的便利。
+
+---
+
+### 3. 为什么先注入 `ChatClient.Builder`，而不是直接 new ChatClient？
+
+因为 `ChatClient.Builder` 已经由 Spring 容器配置好了底层模型能力。
+
+它背后包含：
+
+- 模型客户端配置。
+- API Key 配置。
+- 模型名称配置。
+- Spring AI 的调用抽象。
+- Spring AI Alibaba 的 DashScope 实现。
+
+如果你自己 `new`，就需要手动组装很多底层对象，不适合 Spring Boot 应用。
+
+在 Spring 项目中，推荐做法是：
+
+```text
+让框架负责创建基础设施对象
+业务代码只注入并使用这些对象
+```
+
+---
+
+### 4. `defaultSystem` 是什么？
+
+`defaultSystem(...)` 设置的是默认 System Prompt。
+
+System Prompt 的作用是告诉模型：
+
+- 你是谁。
+- 你应该如何回答。
+- 你有什么行为边界。
+- 你的输出风格是什么。
+
+本 Demo 中写的是：
+
+```java
+.defaultSystem("你是一个 Spring AI Alibaba 环境检查助手。回答要简洁。")
+```
+
+它的目的不是复杂 Prompt 工程，而是让你先看到：
+
+```text
+模型调用 = system 指令 + user 输入 + 模型生成
+```
+
+后续阶段会专门学习 Prompt 工程。
+
+---
+
+### 5. `/env/status` 和 `/env/ping` 为什么要分开？
+
+这两个接口解决的问题不同。
+
+#### `/env/status`
+
+只检查本地配置，不调用模型。
+
+适合排查：
+
+- 应用是否启动。
+- 配置是否读取。
+- API Key 是否存在。
+- 模型名是否正确。
+
+#### `/env/ping`
+
+会真正调用模型。
+
+适合排查：
+
+- API Key 是否有效。
+- 模型服务是否开通。
+- 网络是否可达。
+- Spring AI Alibaba 调用链路是否正常。
+
+分开的好处是：
+
+```text
+先排查本地配置，再排查远程模型调用
+```
+
+这样问题定位更清晰。
+
+---
+
+### 6. 配置读取原理
+
+`application.yml` 中的配置：
+
+```yaml
+spring:
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:默认值}
+      chat:
+        options:
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+```
+
+含义是：
+
+- 优先读取环境变量 `DASHSCOPE_API_KEY`。
+- 如果环境变量不存在，就使用冒号后面的默认值。
+- `DASHSCOPE_CHAT_MODEL` 同理。
+
+Controller 中通过 `@Value` 读取配置：
+
+```java
+@Value("${spring.ai.dashscope.api-key:}") String apiKey
+@Value("${spring.ai.dashscope.chat.options.model:qwen-plus}") String model
+```
+
+Spring Boot 启动时会把配置值注入到构造方法参数中。
+
+---
+
+### 7. 为什么 API Key 要脱敏？
+
+API Key 是访问模型服务的凭证。
+
+如果泄露，可能导致：
+
+- 别人盗用你的模型额度。
+- 产生额外费用。
+- 访问你账号下的服务能力。
+- 造成安全审计问题。
+
+所以 `/env/status` 只返回：
+
+```text
+前 4 位 + **** + 后 4 位
+```
+
+不返回完整 Key。
+
+真实生产系统中还应避免：
+
+- 把 API Key 写入日志。
+- 把 API Key 返回给前端。
+- 把 API Key 提交到 Git 仓库。
+
+---
+
+### 8. 同步调用原理
+
+`/env/ping` 使用的是同步调用：
+
+```java
+chatClient.prompt()
+        .user(message)
+        .call()
+        .content();
+```
+
+可以理解为：
+
+```text
+构造 Prompt
+  ↓
+添加 user 消息
+  ↓
+发起模型调用
+  ↓
+等待模型完整生成
+  ↓
+取出文本内容
+```
+
+同步调用适合：
+
+- 简单问答。
+- 后台任务。
+- 环境验证。
+- 对实时逐字输出要求不高的场景。
+
+后续 ChatBot 阶段会学习流式调用。
+
+---
+
+### 9. 阶段一为什么不直接做完整 ChatBot？
+
+因为 AI 应用开发中常见问题很多：
+
+- API Key 没配。
+- 模型名写错。
+- 账号没有权限。
+- 网络无法访问模型服务。
+- 依赖版本不匹配。
+- JDK 版本不匹配。
+
+如果一开始就写完整 ChatBot，排查问题会比较混乱。
+
+阶段一先做环境检查 Demo，目的是建立一个最小闭环：
+
+```text
+依赖正确 → 配置正确 → 应用能启动 → 模型能调用
+```
+
+只有这个闭环稳定后，再进入 ChatBot、Prompt、Memory、Tool Calling、RAG 才更顺畅。
+
+---
+
+## 九、常见问题
 
 ### 1. `apiKeyConfigured` 返回 `false`
 
@@ -411,7 +676,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8081
 
 ---
 
-## 九、阶段完成标准
+## 十、阶段完成标准
 
 完成本 Demo 后，你应该能做到：
 
@@ -425,7 +690,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8081
 
 ---
 
-## 十、下一阶段
+## 十一、下一阶段
 
 完成本 Demo 后，进入阶段二：ChatClient 与 ChatBot 入门。
 

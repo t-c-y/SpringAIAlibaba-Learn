@@ -1,9 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Maven 项目描述文件。
+
+    学习重点：
+    1. pom.xml 用来声明项目的基础信息、依赖、插件和版本管理规则。
+    2. Spring Boot 项目通常会继承 spring-boot-starter-parent，获得默认插件配置和依赖版本管理。
+    3. Spring AI Alibaba 通过 BOM 管理一组相关依赖版本，避免你手动指定每个依赖的版本。
+    4. 阶段一只需要 Web 能力和 DashScope 模型接入能力，所以依赖保持最小化。
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
+    <!--
+        继承 Spring Boot 官方父工程。
+
+        作用：
+        1. 统一 Spring Boot 相关依赖版本。
+        2. 提供默认 Maven 插件配置。
+        3. 简化项目配置。
+
+        Spring Boot 3.x 要求 Java 17+。
+    -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
@@ -11,6 +30,7 @@
         <relativePath/>
     </parent>
 
+    <!-- 当前 Demo 的 Maven 坐标。 -->
     <groupId>com.example</groupId>
     <artifactId>spring-ai-alibaba-environment-check-demo</artifactId>
     <version>0.0.1-SNAPSHOT</version>
@@ -18,10 +38,31 @@
     <description>Spring AI Alibaba environment check demo</description>
 
     <properties>
+        <!--
+            Java 编译版本。
+
+            Spring Boot 3.x 至少需要 Java 17。
+            你本机当前已切换到 Java 21，也可以编译运行 Java 17 目标版本的项目。
+        -->
         <java.version>17</java.version>
+
+        <!--
+            Spring AI Alibaba 版本。
+
+            当前学习路线基于 1.0.0.2。
+            后续升级版本时，优先关注官方迁移说明和 examples 变化。
+        -->
         <spring-ai-alibaba.version>1.0.0.2</spring-ai-alibaba.version>
     </properties>
 
+    <!--
+        dependencyManagement 只负责“管理版本”，不会直接引入依赖。
+
+        spring-ai-alibaba-bom 的作用：
+        1. 统一 Spring AI Alibaba 相关模块版本。
+        2. 让 dependencies 中的 Spring AI Alibaba 依赖可以不写 version。
+        3. 降低依赖版本冲突概率。
+    -->
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -35,10 +76,33 @@
     </dependencyManagement>
 
     <dependencies>
+        <!--
+            Spring Boot Web Starter。
+
+            提供：
+            1. Spring MVC。
+            2. 内嵌 Tomcat。
+            3. JSON 序列化。
+            4. REST Controller 支持。
+
+            本 Demo 的 /env/status 和 /env/ping 接口依赖它对外提供 HTTP 服务。
+        -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+
+        <!--
+            Spring AI Alibaba DashScope Starter。
+
+            提供：
+            1. DashScope / 百炼模型服务接入。
+            2. ChatClient.Builder 自动配置。
+            3. 读取 spring.ai.dashscope.* 配置。
+            4. 与 Spring AI 的 ChatModel、ChatClient 等抽象集成。
+
+            引入这个依赖后，只要配置了 API Key 和模型名，就可以在代码中注入 ChatClient.Builder。
+        -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
@@ -47,6 +111,14 @@
 
     <build>
         <plugins>
+            <!--
+                Spring Boot Maven 插件。
+
+                常用能力：
+                1. mvn spring-boot:run 启动应用。
+                2. mvn package 打出可运行 jar。
+                3. 处理 Spring Boot 应用的打包结构。
+            -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

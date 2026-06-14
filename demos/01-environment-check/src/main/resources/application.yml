@@ -1,18 +1,48 @@
+# application.yml 是 Spring Boot 的主配置文件。
+#
+# 学习重点：
+# 1. Spring Boot 启动时会自动读取 classpath 下的 application.yml。
+# 2. Spring AI Alibaba 的自动配置会读取 spring.ai.dashscope.* 这些配置项。
+# 3. 配置项可以写固定值，也可以通过 ${环境变量:默认值} 的方式从环境变量读取。
+# 4. 真实项目中，API Key 建议放在环境变量、密钥管理系统或配置中心中。
+
 server:
+  # 当前 Web 服务端口。
+  # 启动后可以通过 http://localhost:8080 访问接口。
   port: 8080
 
 spring:
   application:
+    # 应用名称。
+    # 这里主要用于 /env/status 接口展示，后续接入日志、注册中心、链路追踪时也会用到。
     name: spring-ai-alibaba-environment-check-demo
   ai:
     dashscope:
+      # DashScope / 百炼 API Key。
+      #
+      # 写法说明：
+      # ${DASHSCOPE_API_KEY:默认值}
+      # - 优先读取环境变量 DASHSCOPE_API_KEY。
+      # - 如果环境变量不存在，则使用冒号后面的默认值。
+      #
+      # 安全提醒：
+      # 当前 Demo 主要用于本地学习。真实项目中不要把 API Key 明文提交到代码仓库。
       api-key: ${DASHSCOPE_API_KEY:sk-78761a4510fa4d9fadbd8db12ab25ca3}
       chat:
         options:
+          # 聊天模型名称。
+          # 优先读取环境变量 DASHSCOPE_CHAT_MODEL；如果没有配置，则默认使用 qwen-plus。
+          # 后续学习多模型路由时，可以把模型选择做成动态策略。
           model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
 
+# Spring Boot Actuator 相关配置。
+#
+# 当前 pom.xml 暂未引入 spring-boot-starter-actuator，
+# 这里先保留配置作为学习提示：后续加入 actuator 依赖后，
+# 可以通过 /actuator/health、/actuator/info 等接口观察应用状态。
 management:
   endpoints:
     web:
       exposure:
+        # 暴露 health 和 info 端点。
         include: health,info
