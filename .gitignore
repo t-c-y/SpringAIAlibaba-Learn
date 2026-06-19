@@ -24,3 +24,5 @@ dist/
 nbdist/
 .DS_Store
 rebel.xml
+
+.claude/
