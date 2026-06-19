@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatClient 快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>ChatClient 快速参考</h1>
+    <p class="small">用于复习阶段一、阶段二中最核心的模型调用链路。</p>
+  </header>
+
+  <section>
+    <h2>最小同步调用</h2>
+    <pre><code>String answer = chatClient.prompt()
+        .user("请介绍 Spring AI Alibaba")
+        .call()
+        .content();</code></pre>
+
+    <div class="grid">
+      <div class="card">
+        <h3><code>prompt()</code></h3>
+        <p>开始构造一次模型请求。可以继续追加 system、user、assistant 等消息。</p>
+      </div>
+      <div class="card">
+        <h3><code>user(...)</code></h3>
+        <p>用户本次输入。对于 Web API，通常来自请求体中的问题字段。</p>
+      </div>
+      <div class="card">
+        <h3><code>call()</code></h3>
+        <p>发起同步调用。线程等待模型完整生成后再继续执行。</p>
+      </div>
+      <div class="card">
+        <h3><code>content()</code></h3>
+        <p>取出模型回答的文本内容，适合最小 ChatBot 和环境验证。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>System Prompt 与 User Message</h2>
+    <table>
+      <thead>
+      <tr><th>概念</th><th>职责</th><th>例子</th></tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>System Prompt</td>
+        <td>定义助手身份、边界、风格和默认策略。</td>
+        <td>“你是一个企业级 Java 后端开发学习助手。”</td>
+      </tr>
+      <tr>
+        <td>User Message</td>
+        <td>用户本次具体问题或任务。</td>
+        <td>“请用三点说明 Spring AI Alibaba 的价值。”</td>
+      </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>企业开发提醒</h2>
+    <ul>
+      <li>API Key 不写入仓库，优先来自环境变量、密钥管理系统或配置中心。</li>
+      <li>模型调用要封装在清晰的后端边界内，便于增加权限、审计、限流和观测。</li>
+      <li>同步调用适合简单问答和后台任务；面向用户的长回答通常需要流式输出。</li>
+      <li>不要把 Memory、Tool Calling、RAG 一开始全部混入，先让单轮调用稳定。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>常用排查顺序</h2>
+    <ol>
+      <li>应用是否启动：检查端口和启动日志。</li>
+      <li>配置是否读取：调用 <code>/chat/status</code>。</li>
+      <li>API Key 是否存在：确认 <code>DASHSCOPE_API_KEY</code>。</li>
+      <li>模型名是否正确：确认 <code>DASHSCOPE_CHAT_MODEL</code> 或默认值。</li>
+      <li>远程调用是否成功：调用真正的问答接口。</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

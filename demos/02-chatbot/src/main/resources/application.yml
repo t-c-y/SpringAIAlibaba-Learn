@@ -1,0 +1,15 @@
+server:
+  # 避免和 01-environment-check 的 8080 端口冲突。
+  port: 8081
+
+spring:
+  application:
+    name: spring-ai-alibaba-chatbot-demo
+  ai:
+    dashscope:
+      # 真实项目中不要把 API Key 写入配置文件或提交到仓库。
+      api-key: ${DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          # qwen-plus 适合入门阶段验证通用问答能力。
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}

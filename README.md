@@ -23,13 +23,14 @@
 
 ## 当前项目状态
 
-当前仓库已经包含阶段一 Demo：
+当前仓库已经包含前两个阶段 Demo：
 
 ```text
 demos/01-environment-check
+demos/02-chatbot
 ```
 
-该 Demo 用于验证 Spring AI Alibaba 开发环境，包含：
+`01-environment-check` 用于验证 Spring AI Alibaba 开发环境，包含：
 
 - Spring Boot 应用启动。
 - Spring AI Alibaba DashScope Starter 接入。
@@ -37,6 +38,13 @@ demos/01-environment-check
 - 模型名称配置读取。
 - 环境状态检查接口。
 - `ChatClient` 最小模型调用验证接口。
+
+`02-chatbot` 用于学习最小 ChatBot 业务接口，包含：
+
+- ChatBot 状态检查接口。
+- 基于 `ChatClient` 的同步问答接口。
+- `defaultSystem` 默认系统提示词。
+- API Key 缺失和问题为空的基础校验。
 
 ---
 
@@ -46,15 +54,26 @@ demos/01-environment-check
 .
 ├── README.md
 ├── demos
-│   └── 01-environment-check
+│   ├── 01-environment-check
+│   │   ├── README.md
+│   │   ├── pom.xml
+│   │   └── src
+│   │       └── main
+│   │           ├── java
+│   │           │   └── com/example/springaialibaba/envcheck
+│   │           │       ├── EnvironmentCheckApplication.java
+│   │           │       └── EnvironmentCheckController.java
+│   │           └── resources
+│   │               └── application.yml
+│   └── 02-chatbot
 │       ├── README.md
 │       ├── pom.xml
 │       └── src
 │           └── main
 │               ├── java
-│               │   └── com/example/springaialibaba/envcheck
-│               │       ├── EnvironmentCheckApplication.java
-│               │       └── EnvironmentCheckController.java
+│               │   └── com/example/springaialibaba/chatbot
+│               │       ├── ChatbotApplication.java
+│               │       └── ChatController.java
 │               └── resources
 │                   └── application.yml
 └── notes

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>从环境检查到最小 ChatBot</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script src="../assets/quiz.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Lesson 0001 · Spring AI Alibaba</div>
+    <h1>从环境检查到最小 ChatBot</h1>
+    <p>本课的目标很小：把你已经拥有的 Spring Boot 后端经验，连接到 Spring AI Alibaba 的第一个业务接口。</p>
+    <p class="small">配套 Demo：<code>demos/01-environment-check</code>、<code>demos/02-chatbot</code>。参考卡片：<a href="../reference/0001-chatclient-quick-reference.html">ChatClient 快速参考</a>。</p>
+  </header>
+
+  <section>
+    <h2>你今天要获得的一个能力</h2>
+    <div class="callout">
+      <p><strong>能力目标：</strong>看到一段 Spring AI Alibaba 的 ChatClient 代码时，能说清楚它如何把 HTTP 请求转成一次大模型调用。</p>
+    </div>
+
+    <p>你已经熟悉 Java / Spring Boot，所以我们不从 Controller、Maven、REST API 重新讲起。你只需要把下面这条新链路装进已有后端知识里：</p>
+
+    <pre><code>HTTP 请求
+  ↓
+Spring Controller
+  ↓
+ChatClient
+  ↓
+Spring AI ChatModel 抽象
+  ↓
+Spring AI Alibaba DashScope 实现
+  ↓
+DashScope / 百炼模型服务</code></pre>
+  </section>
+
+  <section>
+    <h2>为什么先做环境检查，再做 ChatBot？</h2>
+    <p>AI 应用的第一类问题通常不是“业务逻辑写错”，而是调用链路没有打通：API Key 没配、模型名写错、账号没权限、网络不通、依赖版本不匹配。</p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>阶段一：环境检查</h3>
+        <p><code>/env/status</code> 不调用模型，只检查本地配置；<code>/env/ping</code> 真正调用一次模型。</p>
+      </div>
+      <div class="card">
+        <h3>阶段二：最小 ChatBot</h3>
+        <p><code>/chat/ask</code> 开始接收用户问题，并返回模型回答。它才是业务接口的雏形。</p>
+      </div>
+    </div>
+
+    <p>企业开发里，这个顺序很重要：先证明基础设施可用，再叠加业务能力。</p>
+  </section>
+
+  <section>
+    <h2>核心代码只看四步</h2>
+    <pre><code>String answer = chatClient.prompt()
+        .user(request.question())
+        .call()
+        .content();</code></pre>
+
+    <ol>
+      <li><code>prompt()</code>：开始构造一次模型请求。</li>
+      <li><code>user(...)</code>：放入用户本次问题。</li>
+      <li><code>call()</code>：执行同步模型调用。</li>
+      <li><code>content()</code>：取出模型回答文本。</li>
+    </ol>
+
+    <div class="callout warning">
+      <p><strong>注意：</strong>这里还没有 Memory，所以它不是多轮对话；还没有 Tool Calling，所以模型不能真正操作外部系统；还没有 RAG，所以模型不会自动查你的企业知识库。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>System Prompt 是默认策略</h2>
+    <p>在 <code>demos/02-chatbot</code> 中，构造方法里设置了 <code>defaultSystem(...)</code>。它不是用户问题，而是这个 ChatBot 的默认角色和行为边界。</p>
+
+    <pre><code>this.chatClient = chatClientBuilder
+        .defaultSystem("你是一个企业级 Java 后端开发学习助手...")
+        .build();</code></pre>
+
+    <p>你可以把它类比为后端服务的“默认策略配置”：用户每次问什么会变，但系统希望助手遵守的身份、风格、边界相对稳定。</p>
+  </section>
+
+  <section>
+    <h2>动手练习：运行第二个 Demo</h2>
+    <div class="practice">
+      <ol>
+        <li>设置环境变量：<code>export DASHSCOPE_API_KEY=你的 API Key</code></li>
+        <li>进入目录：<code>cd demos/02-chatbot</code></li>
+        <li>启动应用：<code>mvn spring-boot:run</code></li>
+        <li>检查状态：<code>curl 'http://localhost:8081/chat/status'</code></li>
+        <li>发起问答：<br><code>curl -X POST 'http://localhost:8081/chat/ask' -H 'Content-Type: application/json' -d '{"question":"请用三点说明 Spring AI Alibaba 在企业开发中的价值"}'</code></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <h2>检索练习：不要看上文，先回答</h2>
+
+    <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。call() 会执行同步模型调用。" data-wrong="再想想：哪一步真的把请求发给模型服务？">
+      <p><strong>问题 1：</strong>在 <code>chatClient.prompt().user(...).call().content()</code> 中，哪一步真正执行同步模型调用？</p>
+      <div class="quiz-options">
+        <button data-option="A">user()</button>
+        <button data-option="B">call()</button>
+        <button data-option="C">content()</button>
+      </div>
+      <p class="quiz-feedback small">选择一个答案。</p>
+    </div>
+
+    <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。System Prompt 定义默认身份、边界和风格。" data-wrong="再想想：用户本次问题和助手默认策略不是一回事。">
+      <p><strong>问题 2：</strong><code>defaultSystem(...)</code> 最接近下面哪种角色？</p>
+      <div class="quiz-options">
+        <button data-option="A">默认策略</button>
+        <button data-option="B">用户问题</button>
+        <button data-option="C">模型结果</button>
+      </div>
+      <p class="quiz-feedback small">选择一个答案。</p>
+    </div>
+
+    <div class="quiz-card" data-quiz data-answer="C" data-correct="正确。API Key 应通过环境变量、密钥系统或配置中心注入。" data-wrong="再想想：企业项目最怕敏感凭证进入仓库。">
+      <p><strong>问题 3：</strong>企业项目中，DashScope API Key 最不应该放在哪里？</p>
+      <div class="quiz-options">
+        <button data-option="A">环境变量</button>
+        <button data-option="B">密钥系统</button>
+        <button data-option="C">代码仓库</button>
+      </div>
+      <p class="quiz-feedback small">选择一个答案。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>主资料</h2>
+    <p>建议本课后阅读：<a href="https://java2ai.com/docs/1.0.0.2/get-started/chatbot/">Spring AI Alibaba ChatBot 入门文档</a>。它是后续课程对齐官方写法的主要依据。</p>
+    <p>如果你对 <code>ChatClient</code> 抽象想看更底层的来源，也可以查阅 <a href="https://docs.spring.io/spring-ai/reference/">Spring AI 官方参考文档</a>。</p>
+  </section>
+
+  <section>
+    <h2>课后问答</h2>
+    <p>你可以直接问我：</p>
+    <ul>
+      <li>“帮我逐行讲解 <code>ChatController</code>。”</li>
+      <li>“为什么这里用 <code>ChatClient.Builder</code>，不是自己 new？”</li>
+      <li>“下一课帮我做流式 ChatBot Demo。”</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,193 @@
+/* Shared course stylesheet for printable Chinese technical lessons. */
+:root {
+  --ink: #172033;
+  --muted: #5d6b82;
+  --line: #d9e1ec;
+  --paper: #fbfcfe;
+  --panel: #ffffff;
+  --accent: #0f766e;
+  --accent-soft: #e6fffb;
+  --warn: #9a3412;
+  --warn-soft: #fff7ed;
+  --code: #0f172a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-serif, "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+  line-height: 1.75;
+}
+
+main {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 48px 28px 72px;
+}
+
+header {
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 24px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1, h2, h3 {
+  line-height: 1.25;
+  margin: 1.6em 0 0.55em;
+}
+
+h1 {
+  font-size: 2.25rem;
+  margin-top: 0.2em;
+}
+
+h2 {
+  font-size: 1.45rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.1em;
+}
+
+h3 {
+  font-size: 1.12rem;
+}
+
+p, li {
+  font-size: 1.02rem;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+code {
+  color: var(--code);
+  background: #eef2f7;
+  border-radius: 4px;
+  padding: 0.08em 0.28em;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+pre {
+  overflow-x: auto;
+  background: #0b1220;
+  color: #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  line-height: 1.55;
+}
+
+pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.callout, .practice, .quiz-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--accent);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin: 20px 0;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.05);
+}
+
+.warning {
+  background: var(--warn-soft);
+  border-left-color: var(--warn);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+
+.small {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.kbd {
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.9em;
+}
+
+.quiz-options {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.quiz-options button {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--ink);
+  font: inherit;
+}
+
+.quiz-options button:hover {
+  border-color: var(--accent);
+}
+
+.quiz-options button.correct {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.quiz-options button.wrong {
+  background: #fff1f2;
+  border-color: #be123c;
+}
+
+.quiz-feedback {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  main {
+    max-width: none;
+    padding: 0;
+  }
+
+  .quiz-options button {
+    border-color: #999;
+  }
+}

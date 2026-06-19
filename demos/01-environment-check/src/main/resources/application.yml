@@ -27,7 +27,7 @@ spring:
       #
       # 安全提醒：
       # 当前 Demo 主要用于本地学习。真实项目中不要把 API Key 明文提交到代码仓库。
-      api-key: ${DASHSCOPE_API_KEY:sk-78761a4510fa4d9fadbd8db12ab25ca3}
+      api-key: ${DASHSCOPE_API_KEY:}
       chat:
         options:
           # 聊天模型名称。
