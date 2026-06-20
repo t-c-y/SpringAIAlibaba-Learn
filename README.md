@@ -23,11 +23,12 @@
 
 ## 当前项目状态
 
-当前仓库已经包含前两个阶段 Demo：
+当前仓库已经包含前三个阶段 Demo：
 
 ```text
 demos/01-environment-check
 demos/02-chatbot
+demos/03-streaming-chatbot
 ```
 
 `01-environment-check` 用于验证 Spring AI Alibaba 开发环境，包含：
@@ -45,6 +46,14 @@ demos/02-chatbot
 - 基于 `ChatClient` 的同步问答接口。
 - `defaultSystem` 默认系统提示词。
 - API Key 缺失和问题为空的基础校验。
+
+`03-streaming-chatbot` 用于学习流式 ChatBot 和 SSE，包含：
+
+- ChatBot 状态检查接口。
+- 同步问答接口，用于和流式接口对比。
+- 基于 `ChatClient.stream().content()` 的流式问答接口。
+- `text/event-stream` SSE 输出。
+- `curl -N` 流式验证方式。
 
 ---
 
@@ -65,17 +74,37 @@ demos/02-chatbot
 │   │           │       └── EnvironmentCheckController.java
 │   │           └── resources
 │   │               └── application.yml
-│   └── 02-chatbot
+│   ├── 02-chatbot
+│   │   ├── README.md
+│   │   ├── pom.xml
+│   │   └── src
+│   │       └── main
+│   │           ├── java
+│   │           │   └── com/example/springaialibaba/chatbot
+│   │           │       ├── ChatbotApplication.java
+│   │           │       ├── ChatController.java
+│   │           │       └── DashScopeHttpClientConfiguration.java
+│   │           └── resources
+│   │               └── application.yml
+│   └── 03-streaming-chatbot
 │       ├── README.md
 │       ├── pom.xml
 │       └── src
 │           └── main
 │               ├── java
-│               │   └── com/example/springaialibaba/chatbot
-│               │       ├── ChatbotApplication.java
-│               │       └── ChatController.java
+│               │   └── com/example/springaialibaba/streamingchatbot
+│               │       ├── DashScopeHttpClientConfiguration.java
+│               │       ├── StreamingChatController.java
+│               │       └── StreamingChatbotApplication.java
 │               └── resources
 │                   └── application.yml
+├── learn
+│   ├── lessons
+│   │   ├── 0001-from-environment-check-to-chatbot.html
+│   │   └── 0002-streaming-chatbot-sse.html
+│   └── reference
+│       ├── 0001-chatclient-quick-reference.html
+│       └── 0002-streaming-chatbot-sse-quick-reference.html
 └── notes
     └── ai-agent-learning-roadmap.md
 ```
@@ -153,7 +182,9 @@ notes/ai-agent-learning-roadmap.md
 
 ---
 
-## 当前 Demo：01-environment-check
+## 当前已完成 Demo
+
+### 01-environment-check
 
 ### 功能说明
 
@@ -214,6 +245,62 @@ curl 'http://localhost:8080/env/ping'
 
 ```text
 demos/01-environment-check/README.md
+```
+
+### 02-chatbot
+
+`demos/02-chatbot` 是阶段二 Demo，用于学习最小 ChatBot 业务接口。
+
+它包含两个接口：
+
+```http
+GET /chat/status
+POST /chat/ask
+```
+
+运行方式：
+
+```bash
+cd demos/02-chatbot
+export DASHSCOPE_API_KEY=你的 API Key
+mvn spring-boot:run
+```
+
+测试同步问答：
+
+```bash
+curl -X POST 'http://localhost:8081/chat/ask' \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"请用三点说明 Spring AI Alibaba 在企业开发中的价值"}'
+```
+
+### 03-streaming-chatbot
+
+`demos/03-streaming-chatbot` 是阶段三 Demo，用于学习流式 ChatBot 和 SSE。
+
+它包含三个接口：
+
+```http
+GET /chat/status
+POST /chat/ask
+POST /chat/stream
+```
+
+运行方式：
+
+```bash
+cd demos/03-streaming-chatbot
+export DASHSCOPE_API_KEY=你的 API Key
+mvn spring-boot:run
+```
+
+测试流式问答：
+
+```bash
+curl -N -X POST 'http://localhost:8082/chat/stream' \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: text/event-stream' \
+  -d '{"question":"请用三点解释 SSE 为什么适合 ChatBot"}'
 ```
 
 ---

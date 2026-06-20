@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>流式 ChatBot 与 SSE</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script src="../assets/quiz.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Lesson 0002 · Spring AI Alibaba</div>
+    <h1>流式 ChatBot 与 SSE</h1>
+    <p>本课的目标很小：把一次性返回的 ChatBot，改造成可以边生成边返回的流式接口。</p>
+    <p class="small">配套 Demo：<code>demos/03-streaming-chatbot</code>。参考卡片：<a href="../reference/0002-streaming-chatbot-sse-quick-reference.html">流式 ChatBot 与 SSE 快速参考</a>。</p>
+  </header>
+
+  <section>
+    <h2>你今天要获得的一个能力</h2>
+    <div class="callout">
+      <p><strong>能力目标：</strong>看到一个流式 ChatBot 接口时，能说清楚它如何用 <code>ChatClient.stream()</code> 和 HTTP SSE 把模型生成过程逐步返回给客户端。</p>
+    </div>
+
+    <p>上一课你已经掌握了同步调用：</p>
+
+    <pre><code>chatClient.prompt()
+        .user(question)
+        .call()
+        .content();</code></pre>
+
+    <p>这一课只替换一个核心动作：</p>
+
+    <pre><code>chatClient.prompt()
+        .user(question)
+        .stream()
+        .content();</code></pre>
+  </section>
+
+  <section>
+    <h2>为什么 ChatBot 需要流式输出？</h2>
+    <p>如果模型回答很长，同步接口会让用户一直等待，直到完整答案生成完毕。流式输出可以让用户更早看到内容，体验接近“助手正在打字”。</p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>同步回答</h3>
+        <p>适合短问题、后台任务、环境验证。缺点是长回答时用户一直等待。</p>
+      </div>
+      <div class="card">
+        <h3>流式回答</h3>
+        <p>适合智能客服、代码解释、文档总结。模型生成一部分，用户就能看到一部分。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>核心链路</h2>
+    <pre><code>HTTP POST /chat/stream
+  ↓
+Spring Controller
+  ↓
+ChatClient.prompt()
+  ↓
+.user(question)
+  ↓
+.stream()
+  ↓
+.content()
+  ↓
+Flux&lt;String&gt;
+  ↓
+text/event-stream</code></pre>
+
+    <p>这里的新概念有两个：</p>
+    <ul>
+      <li><code>Flux&lt;String&gt;</code>：表示一串未来会陆续到达的字符串片段。</li>
+      <li><code>text/event-stream</code>：HTTP SSE 的响应类型，表示服务端会持续向客户端发送事件。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>SSE 是什么？</h2>
+    <p>SSE 是 Server-Sent Events。它适合“服务端持续向客户端推送文本”的场景。</p>
+
+    <div class="callout">
+      <p><strong>为什么本课用 SSE，而不是 WebSocket？</strong></p>
+      <p>因为 ChatBot 流式回答主要是服务端向客户端单向输出。SSE 更简单，和普通 HTTP 更接近，适合作为后端流式输出的第一课。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>核心代码对比</h2>
+    <h3>同步接口</h3>
+    <pre><code>String answer = chatClient.prompt()
+        .user(request.question())
+        .call()
+        .content();</code></pre>
+
+    <h3>流式接口</h3>
+    <pre><code>@PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Flux&lt;String&gt; stream(@RequestBody AskRequest request) {
+    return chatClient.prompt()
+            .user(request.question())
+            .stream()
+            .content();
+}</code></pre>
+  </section>
+
+  <section>
+    <h2>动手练习：运行第三个 Demo</h2>
+    <div class="practice">
+      <ol>
+        <li>设置环境变量：<code>export DASHSCOPE_API_KEY=你的 API Key</code></li>
+        <li>进入目录：<code>cd demos/03-streaming-chatbot</code></li>
+        <li>启动应用：<code>mvn spring-boot:run</code></li>
+        <li>检查状态：<code>curl 'http://localhost:8082/chat/status'</code></li>
+        <li>测试同步接口：<br><code>curl -X POST 'http://localhost:8082/chat/ask' -H 'Content-Type: application/json' -d '{"question":"请用三点说明为什么 ChatBot 需要流式输出"}'</code></li>
+        <li>测试流式接口：<br><code>curl -N -X POST 'http://localhost:8082/chat/stream' -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"question":"请用三点解释 SSE 为什么适合 ChatBot"}'</code></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <h2>为什么仍然不引入 Memory、Tool、RAG？</h2>
+    <p>因为本课只学习“传输体验”这一件事。如果同时加入多轮记忆、工具调用或知识库检索，你会很难判断问题到底出在模型调用、SSE、上下文管理，还是业务工具上。</p>
+
+    <div class="callout warning">
+      <p><strong>学习边界：</strong>本课只处理单轮问题的流式返回。多轮对话会在 Memory 阶段单独学习。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>检索练习：不要看上文，先回答</h2>
+
+    <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。.stream() 会进入流式响应模式。" data-wrong="再想想：同步调用用 call()，流式调用用哪个方法？">
+      <p><strong>问题 1：</strong>在 <code>chatClient.prompt().user(...).stream().content()</code> 中，哪一步表示进入流式响应？</p>
+      <div class="quiz-options">
+        <button data-option="A">user()</button>
+        <button data-option="B">stream()</button>
+        <button data-option="C">content()</button>
+      </div>
+      <p class="quiz-feedback small">选择一个答案。</p>
+    </div>
+
+    <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。text/event-stream 表示 SSE 文本事件流。" data-wrong="再想想：这个接口不是普通 JSON，而是持续输出。">
+      <p><strong>问题 2：</strong><code>text/event-stream</code> 最接近下面哪种含义？</p>
+      <div class="quiz-options">
+        <button data-option="A">事件流</button>
+        <button data-option="B">普通JSON</button>
+        <button data-option="C">文件下载</button>
+      </div>
+      <p class="quiz-feedback small">选择一个答案。</p>
+    </div>
+
+    <div class="quiz-card" data-quiz data-answer="C" data-correct="正确。本课只学习单轮问题的流式返回。" data-wrong="再想想：Memory 会引入会话历史和用户隔离，暂时不是本课重点。">
+      <p><strong>问题 3：</strong>本课为什么不加入 Memory？</p>
+      <div class="quiz-options">
+        <button data-option="A">无法实现</button>
+        <button data-option="B">没有价值</button>
+        <button data-option="C">降低干扰</button>
+      </div>
+      <p class="quiz-feedback small">选择一个答案。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>主资料</h2>
+    <p>建议本课后阅读：<a href="https://docs.spring.io/spring-ai/reference/api/chatclient.html">Spring AI ChatClient 官方文档</a>，重点关注同步调用和流式调用相关 API。</p>
+    <p>也可以继续参考 <a href="https://java2ai.com/docs/1.0.0.2/overview/">Spring AI Alibaba 官方文档</a>，确认 DashScope Starter 和配置方式。</p>
+  </section>
+
+  <section>
+    <h2>课后问答</h2>
+    <p>你可以直接问我：</p>
+    <ul>
+      <li>“帮我逐行讲解 <code>StreamingChatController</code>。”</li>
+      <li>“为什么流式接口返回 <code>Flux&lt;String&gt;</code>？”</li>
+      <li>“SSE 和 WebSocket 在 ChatBot 里怎么选？”</li>
+      <li>“下一课帮我做 Prompt 学习助手 Demo。”</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

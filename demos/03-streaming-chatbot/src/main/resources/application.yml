@@ -1,0 +1,22 @@
+server:
+  # 避免和 01 的 8080、02 的 8081 冲突。
+  port: 8082
+
+spring:
+  application:
+    name: spring-ai-alibaba-streaming-chatbot-demo
+  ai:
+    retry:
+      # 学习阶段减少重试次数，避免网络不通时一次请求等待太久。
+      max-attempts: 2
+    dashscope:
+      # 真实项目中不要把 API Key 写入配置文件或提交到仓库。
+      api-key: ${DASHSCOPE_API_KEY:}
+      # 流式输出通常会保持更久连接，所以读取超时默认比同步 Demo 更长。
+      connect-timeout: ${DASHSCOPE_CONNECT_TIMEOUT:10000}
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:180000}
+      write-timeout: ${DASHSCOPE_WRITE_TIMEOUT:120000}
+      chat:
+        options:
+          # qwen-plus 适合入门阶段验证通用问答能力。
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
