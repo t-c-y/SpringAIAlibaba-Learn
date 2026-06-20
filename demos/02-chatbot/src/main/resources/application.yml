@@ -6,9 +6,15 @@ spring:
   application:
     name: spring-ai-alibaba-chatbot-demo
   ai:
+    retry:
+      # 学习阶段减少重试次数，避免网络不通时一次请求等待太久。
+      max-attempts: 2
     dashscope:
       # 真实项目中不要把 API Key 写入配置文件或提交到仓库。
       api-key: ${DASHSCOPE_API_KEY:}
+      # DashScope 响应较慢或首次调用较慢时，默认读取超时可能不够。
+      # 单位按毫秒配置：60000 表示 60 秒。
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
       chat:
         options:
           # qwen-plus 适合入门阶段验证通用问答能力。

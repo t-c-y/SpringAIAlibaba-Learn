@@ -17,6 +17,9 @@ spring:
     # 这里主要用于 /env/status 接口展示，后续接入日志、注册中心、链路追踪时也会用到。
     name: spring-ai-alibaba-environment-check-demo
   ai:
+    retry:
+      # 学习阶段减少重试次数，避免网络不通时一次请求等待太久。
+      max-attempts: 2
     dashscope:
       # DashScope / 百炼 API Key。
       #
@@ -28,6 +31,9 @@ spring:
       # 安全提醒：
       # 当前 Demo 主要用于本地学习。真实项目中不要把 API Key 明文提交到代码仓库。
       api-key: ${DASHSCOPE_API_KEY:}
+      # DashScope 响应较慢或首次调用较慢时，默认读取超时可能不够。
+      # 单位按毫秒配置：60000 表示 60 秒。
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
       chat:
         options:
           # 聊天模型名称。

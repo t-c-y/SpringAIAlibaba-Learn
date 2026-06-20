@@ -70,10 +70,17 @@ JSON response
 export DASHSCOPE_API_KEY=你的 API Key
 ```
 
-可选：配置模型名。
+可选：配置模型名和读取超时时间。
 
 ```bash
 export DASHSCOPE_CHAT_MODEL=qwen-plus
+export DASHSCOPE_READ_TIMEOUT=120000
+```
+
+如果本机访问 DashScope 较慢，可以临时调大超时时间：
+
+```bash
+export DASHSCOPE_READ_TIMEOUT=120000
 ```
 
 ---
@@ -159,7 +166,44 @@ curl -X POST 'http://localhost:8081/chat/ask' \
 
 ---
 
-## 七、代码阅读顺序
+## 七、超时排查
+
+如果调用 `/chat/ask` 时出现：
+
+```text
+I/O error on POST request for "https://dashscope.aliyuncs.com/...": timeout
+```
+
+说明应用已经读到了 API Key，也已经向 DashScope 发起请求，但等待模型响应时超时。
+
+建议按顺序排查：
+
+1. 先测试本机网络是否能访问 DashScope：
+
+   ```bash
+   curl -I --connect-timeout 5 https://dashscope.aliyuncs.com
+   ```
+
+2. 用最短问题测试，排除长回答导致的等待：
+
+   ```bash
+   curl -X POST 'http://localhost:8081/chat/ask' \
+     -H 'Content-Type: application/json' \
+     -d '{"question":"只回答 OK"}'
+   ```
+
+3. 如果网络能通但仍然慢，可以调大读取超时时间：
+
+   ```bash
+   export DASHSCOPE_READ_TIMEOUT=120000
+   mvn spring-boot:run
+   ```
+
+本 Demo 已将学习阶段重试次数调为 2 次，避免网络异常时一次请求卡太久。
+
+---
+
+## 八、代码阅读顺序
 
 ### Step 1：看 `application.yml`
 
@@ -168,8 +212,11 @@ curl -X POST 'http://localhost:8081/chat/ask' \
 ```yaml
 spring:
   ai:
+    retry:
+      max-attempts: 2
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:60000}
       chat:
         options:
           model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
@@ -213,7 +260,7 @@ String answer = chatClient.prompt()
 
 ---
 
-## 八、为什么本阶段不做多轮对话？
+## 九、为什么本阶段不做多轮对话？
 
 因为多轮对话需要引入 Memory 或手动维护历史消息。企业开发中，Memory 还会牵涉：
 
@@ -227,7 +274,7 @@ String answer = chatClient.prompt()
 
 ---
 
-## 九、阶段完成标准
+## 十、阶段完成标准
 
 你完成本阶段后，应该能做到：
 
@@ -239,7 +286,7 @@ String answer = chatClient.prompt()
 
 ---
 
-## 十、下一阶段
+## 十一、下一阶段
 
 下一阶段建议进入：
 

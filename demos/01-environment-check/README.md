@@ -128,10 +128,17 @@ mvn -version
 export DASHSCOPE_API_KEY=你的 API Key
 ```
 
-可选：配置模型名。
+可选：配置模型名和读取超时时间。
 
 ```bash
 export DASHSCOPE_CHAT_MODEL=qwen-plus
+export DASHSCOPE_READ_TIMEOUT=120000
+```
+
+如果本机访问 DashScope 较慢，可以临时调大超时时间：
+
+```bash
+export DASHSCOPE_READ_TIMEOUT=120000
 ```
 
 ---
@@ -242,7 +249,42 @@ curl 'http://localhost:8080/env/ping?message=请用一句话介绍 Spring AI Ali
 
 ---
 
-## 七、学习步骤
+## 七、超时排查
+
+如果调用 `/env/ping` 时出现：
+
+```text
+I/O error on POST request for "https://dashscope.aliyuncs.com/...": timeout
+```
+
+说明应用已经读到了 API Key，也已经向 DashScope 发起请求，但等待模型响应时超时。
+
+建议按顺序排查：
+
+1. 先测试本机网络是否能访问 DashScope：
+
+   ```bash
+   curl -I --connect-timeout 5 https://dashscope.aliyuncs.com
+   ```
+
+2. 用最短问题测试，排除长回答导致的等待：
+
+   ```bash
+   curl 'http://localhost:8080/env/ping?message=只回答 OK'
+   ```
+
+3. 如果网络能通但仍然慢，可以调大读取超时时间：
+
+   ```bash
+   export DASHSCOPE_READ_TIMEOUT=120000
+   mvn spring-boot:run
+   ```
+
+本 Demo 已将学习阶段重试次数调为 2 次，避免网络异常时一次请求卡太久。
+
+---
+
+## 八、学习步骤
 
 建议按下面顺序学习本 Demo。
 
@@ -268,8 +310,11 @@ curl 'http://localhost:8080/env/ping?message=请用一句话介绍 Spring AI Ali
 ```yaml
 spring:
   ai:
+    retry:
+      max-attempts: 2
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:60000}
       chat:
         options:
           model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
@@ -351,7 +396,7 @@ src/main/java/com/example/springaialibaba/envcheck/EnvironmentCheckController.ja
 
 ---
 
-## 八、原理说明
+## 九、原理说明
 
 ### 1. Spring AI Alibaba 是怎么接入模型的？
 
@@ -506,8 +551,11 @@ System Prompt 的作用是告诉模型：
 ```yaml
 spring:
   ai:
+    retry:
+      max-attempts: 2
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:默认值}
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:60000}
       chat:
         options:
           model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
@@ -518,6 +566,7 @@ spring:
 - 优先读取环境变量 `DASHSCOPE_API_KEY`。
 - 如果环境变量不存在，就使用冒号后面的默认值。
 - `DASHSCOPE_CHAT_MODEL` 同理。
+- `DASHSCOPE_READ_TIMEOUT` 用于控制读取超时时间，默认 120000 毫秒。
 
 Controller 中通过 `@Value` 读取配置：
 
@@ -616,7 +665,7 @@ chatClient.prompt()
 
 ---
 
-## 九、常见问题
+## 十、常见问题
 
 ### 1. `apiKeyConfigured` 返回 `false`
 
@@ -660,7 +709,8 @@ export DASHSCOPE_API_KEY=你的 API Key
 
 - 等待首次调用完成。
 - 再次请求观察耗时。
-- 后续阶段再学习超时和重试配置。
+- 使用 `DASHSCOPE_READ_TIMEOUT` 调大读取超时时间。
+- 本 Demo 已将学习阶段重试次数调为 2 次，避免网络异常时一次请求卡太久。
 
 ---
 
@@ -676,7 +726,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8081
 
 ---
 
-## 十、阶段完成标准
+## 十一、阶段完成标准
 
 完成本 Demo 后，你应该能做到：
 
@@ -690,7 +740,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8081
 
 ---
 
-## 十一、下一阶段
+## 十二、下一阶段
 
 完成本 Demo 后，进入阶段二：ChatClient 与 ChatBot 入门。
 
