@@ -29,6 +29,28 @@ Agent 解析 → 调 MCP Server → 返回结果 → 再交给 LLM → 循环 N 
 <li>把 MockMcpServer 里加一个 <code>get_time</code> 工具，观察 Agent 自动能用。</li>
 </ol></div></section>
 
+<section><h2>动手验证：curl 快速调用</h2>
+<p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+<h3>🔹 <code>17-mcp-integration</code>（端口 8096）</h3>
+<p>启动：<code>cd demos/17-mcp-integration &amp;&amp; mvn spring-boot:run</code></p>
+<div class="practice"><ol>
+<li><p>【MCP 服务端】查看可用工具清单（list_files / search_docs）</p><pre><code>curl http://localhost:8096/mcp/tools
+# 预期：[{"name":"list_files",...},{"name":"search_docs",...}]</code></pre></li>
+<li><p>【MCP 服务端】直接调用指定工具（不经过模型，用于观察协议）</p><pre><code>curl -X POST http://localhost:8096/mcp/call \
+  -H 'Content-Type: application/json'\
+  -d '{"toolName":"search_docs","arguments":{"q":"advisor"}}'
+# 预期：{"ok":true,"q":"advisor","hits":[{"title":"advisor",...}]}</code></pre></li>
+<li><p>【MCP 客户端 Agent】模型自主决定何时调用哪个 MCP 工具，多轮调用直至输出 final</p><pre><code>curl -X POST http://localhost:8096/mcp-agent/ask \
+  -H 'Content-Type: application/json'\
+  -d '{"question":"帮我在知识库里搜索 ChatClient 是什么，然后列出根目录文件"}'
+# 预期：{"success":true,"steps":N,"answer":"..."}</code></pre></li>
+</ol></div>
+<h4>⚡ 3 条命令快速验证 17-mcp-integration</h4>
+<pre><code>curl http://localhost:8096/mcp/tools
+curl -X POST http://localhost:8096/mcp/call -H 'Content-Type: application/json' -d '{"toolName":"search_docs","arguments":{"q":"advisor"}}'
+curl -X POST http://localhost:8096/mcp-agent/ask -H 'Content-Type: application/json' -d '{"question":"帮我搜索知识库里 ChatClient 的说明"}'</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。核心是动态发现。">
 <p><strong>Q1：</strong>MCP 相比 @Tool 的关键差异？</p>

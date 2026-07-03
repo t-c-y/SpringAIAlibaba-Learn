@@ -35,6 +35,22 @@
 <li>把 CLASSIFY 换成更便宜的模型，观察准确率。</li>
 </ol></div></section>
 
+<section>
+  <h2>动手验证：curl 快速调用</h2>
+  <p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+  <h3>🔹 <code>16-graph-agent</code>（端口 8095）</h3>
+  <p>启动：<code>cd demos/16-graph-agent &amp;&amp; mvn spring-boot:run</code></p>
+  <div class="practice"><ol>
+    <li><p>图状态机：CLASSIFY → ORDER_QUERY/POLICY_QA/REFUND_CONFIRM/SMALL_TALK/FALLBACK → END，返回 trace 展示决策路径</p><pre><code>curl -X POST http://localhost:8095/graph/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \\
+  -d '{"question":"你好"}'
+# 预期：{"userId":"u001","trace":["classify","smallTalk","END"],"intent":"SMALL_TALK","answer":"..."}</code></pre></li>
+  </ol></div>
+  <h4>⚡ 3 条命令快速验证 16-graph-agent</h4>
+  <pre><code>curl -X POST http://localhost:8095/graph/ask -H 'Content-Type: application/json' -H 'X-User-Id: u001' -d '{"question":"你好"}'
+curl -X POST http://localhost:8095/graph/ask -H 'Content-Type: application/json' -H 'X-User-Id: u001' -d '{"question":"我的订单 SO-1002 到哪了"}'</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。Graph 的核心价值就是可回放、可测。">
 <p><strong>Q1：</strong>Graph 相比"纯 Advisor + Tool"最大的优势？</p>

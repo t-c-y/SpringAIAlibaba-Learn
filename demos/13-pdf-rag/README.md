@@ -22,18 +22,12 @@ POST /pdf/ask         # 完整 RAG 问答
 ## 三、运行
 
 > 如果你的 `~/.m2/settings.xml` 配置了无法连通的内网 Nexus mirror（导致无法拉 `spring-ai-bom` / `spring-ai-pdf-document-reader`），
-> 本 demo 自带一份备用 settings 文件：`mvn-settings.xml`（指向阿里云公共镜像）。启动时加上 `-s mvn-settings.xml` 即可。
->
-> 其它 demo（01-12、14-19）如果也遇到相同网络问题，可以共用这份 mvn-settings：
-> `mvn -s ../13-pdf-rag/mvn-settings.xml spring-boot:run`。
+> 请先自行修复 `~/.m2/settings.xml`（去掉不可达的 mirror，或临时切换到阿里云公共镜像 / Maven Central）。
 
 ```bash
 cd demos/13-pdf-rag
 export DASHSCOPE_API_KEY=你的 API Key
-# 内网 Nexus 可达时：
 mvn spring-boot:run
-# 内网 Nexus 不可达时（用本 demo 自带的阿里云镜像 settings）：
-mvn -s mvn-settings.xml spring-boot:run
 
 # 上传你的 PDF（例如一份产品手册）
 curl -F 'file=@/path/to/your.pdf' 'http://localhost:8092/pdf/upload'

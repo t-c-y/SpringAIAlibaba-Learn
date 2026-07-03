@@ -32,6 +32,27 @@
 <li>看 <code>/platform/audit</code> 是否记录完整。</li>
 </ol></div></section>
 
+<section>
+  <h2>动手验证：curl 快速调用</h2>
+  <p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+  <h3>🔹 <code>19-agent-platform</code>（端口 8098）</h3>
+  <p>启动：<code>cd demos/19-agent-platform &amp;&amp; mvn spring-boot:run</code></p>
+  <div class="practice"><ol>
+    <li><p>查看已注册 Agent 列表（id/name/intents）</p><pre><code>curl http://localhost:8098/platform/agents
+# 预期：[{"id":"smalltalk","name":"闲聊","intents":[...]}]</code></pre></li>
+    <li><p>统一网关（需 X-User-Id 头）：自动限流（20 次/分钟/用户）+ 按意图路由 Agent + 写审计日志</p><pre><code>curl -X POST http://localhost:8098/platform/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \
+  -d '{"question":"你好，推荐一本 Spring AI 的书"}'
+# 预期：{"success":true,"routedAgent":"smalltalk","latencyMs":N,"answer":"..."}</code></pre></li>
+    <li><p>查看最近 n 条审计记录</p><pre><code>curl http://localhost:8098/platform/audit?n=5
+# 预期：[{id,at,userId,agentId,question,answer,latencyMs}, ...]</code></pre></li>
+  </ol></div>
+  <h4>⚡ 3 条命令快速验证 19-agent-platform</h4>
+  <pre><code>curl http://localhost:8098/platform/agents
+curl -X POST http://localhost:8098/platform/ask -H 'Content-Type: application/json' -H 'X-User-Id: u001' -d '{"question":"你好"}'
+curl "http://localhost:8098/platform/audit?n=5"</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。轻量分类模型省钱。">
 <p><strong>Q1：</strong>路由和业务用同一个大模型？</p>

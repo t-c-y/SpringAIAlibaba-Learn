@@ -32,6 +32,21 @@ ChatClient c = builder.defaultTools(new CalculatorTools()).build();</code></pre>
 <li>把 <code>divide</code> 里除数为 0 抛异常改成返回错误 record，对比效果。</li>
 </ol></div></section>
 
+<section>
+  <h2>动手验证：curl 快速调用</h2>
+  <p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+  <h3>🔹 <code>09-calculator-tool</code>（端口 8088）</h3>
+  <p>启动：<code>cd demos/09-calculator-tool &amp;&amp; mvn spring-boot:run</code></p>
+  <div class="practice"><ol>
+    <li><p>四则运算：模型自动判断何时调用 add/subtract/multiply/divide 工具</p><pre><code>curl -X POST http://localhost:8088/calc/ask \
+  -H 'Content-Type: application/json'\
+  -d '{"question":"(3.14 + 2.86) * 5 等于多少？再减去 4.5 呢"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+  </ol></div>
+  <h4>⚡ 3 条命令快速验证 09-calculator-tool</h4>
+  <pre><code>curl -X POST http://localhost:8088/calc/ask -H 'Content-Type: application/json' -d '{"question":"(3.14 + 2.86) * 5 等于多少"}'</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。description 决定模型选不选。">
 <p><strong>Q1：</strong>@Tool 的 description 主要给谁看？</p>

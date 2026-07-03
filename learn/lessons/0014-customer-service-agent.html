@@ -30,6 +30,21 @@
 <li>u001 越权查 O-2001 → 返回无权限。</li>
 </ol></div></section>
 
+<section>
+    <h2>动手验证：curl 快速调用</h2>
+    <p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+    <h3>🔹 <code>15-customer-service-agent</code>（端口 8094）</h3>
+    <p>启动：<code>cd demos/15-customer-service-agent &amp;&amp; mvn spring-boot:run</code></p>
+    <div class="practice"><ol>
+      <li><p>客服 Agent（需 X-User-Id 头）：自动选择走政策 RAG / 订单工具 / 普通闲聊，并带会话记忆</p><pre><code>curl -X POST http://localhost:8094/cs/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \
+  -d '{"conversationId":"c1","question":"我想退订单 SO-1001，退款多久到账"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+    </ol></div>
+    <h4>⚡ 3 条命令快速验证 15-customer-service-agent</h4>
+    <pre><code>curl -X POST http://localhost:8094/cs/ask -H 'Content-Type: application/json' -H 'X-User-Id: u001' -d '{"conversationId":"c1","question":"我想退款 SO-1001"}'</code></pre>
+  </section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。Memory 在 RAG 之前，历史消息可以指导检索。">
 <p><strong>Q1：</strong>推荐的 Advisor 顺序？</p>

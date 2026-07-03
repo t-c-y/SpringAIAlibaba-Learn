@@ -29,6 +29,30 @@
 <li>用 <code>/rag/ask</code> 比最终回答差异。</li>
 </ol></div></section>
 
+<section><h2>动手验证：curl 快速调用</h2>
+<p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+<h3>🔹 <code>14-rag-tuning</code>（端口 8093）</h3>
+<p>启动：<code>cd demos/14-rag-tuning &amp;&amp; mvn spring-boot:run</code></p>
+<div class="practice"><ol>
+<li><p>按指定 chunk/overlap 重新构建一个向量库 profile（启动时默认有 400-200）</p><pre><code>curl -X POST http://localhost:8093/rag/rebuild?chunk=400&overlap=200
+# 预期：{"profile":"400-200","chunkSize":400,"overlap":200,"totalChunks":N}</code></pre></li>
+<li><p>查看已构建的所有 chunk-overlap 配置</p><pre><code>curl http://localhost:8093/rag/profiles
+# 预期：{"profiles":["400-200",...]}</code></pre></li>
+<li><p>对指定 profile 做检索（可配 topK/threshold，用于对比召回效果）</p><pre><code>curl -X POST http://localhost:8093/rag/retrieve \
+  -H 'Content-Type: application/json'\
+  -d '{"profile":"400-200","question":"RAG 怎么调优","topK":4,"similarityThreshold":0.0}'
+# 预期：{"hits":[{"source":"...","score":0.xx,"text":"..."}...],"question":"..."}</code></pre></li>
+<li><p>在指定 profile 上做 RAG 问答（代码手工拼装 Prompt 展示原理）</p><pre><code>curl -X POST http://localhost:8093/rag/ask \
+  -H 'Content-Type: application/json'\
+  -d '{"profile":"400-200","question":"chunk size 怎么选？"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+</ol></div>
+<h4>⚡ 3 条命令快速验证 14-rag-tuning</h4>
+<pre><code>curl -X POST "http://localhost:8093/rag/rebuild?chunk=400&overlap=200"
+curl http://localhost:8093/rag/profiles
+curl -X POST http://localhost:8093/rag/ask -H 'Content-Type: application/json' -d '{"profile":"400-200","question":"怎样选 chunk size"}'</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。相关度是评估召回的核心。">
 <p><strong>Q1：</strong>调参最先要盯的指标？</p>

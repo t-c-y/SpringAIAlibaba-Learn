@@ -34,6 +34,27 @@ client.prompt().user(q).advisors(a -&gt; a
 <li><code>/chat/reset?conversationId=userA</code> 清空后再问。</li>
 </ol></div></section>
 
+<section>
+<h2>动手验证：curl 快速调用</h2>
+<p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+<h3>🔹 <code>07-chat-memory</code>（端口 8086）</h3>
+<p>启动：<code>cd demos/07-chat-memory &amp;&amp; mvn spring-boot:run</code></p>
+<div class="practice"><ol>
+<li><p>多轮问答（通过 conversationId 隔离会话）</p><pre><code>curl -X POST http://localhost:8086/chat/ask \
+  -H 'Content-Type: application/json'\
+  -d '{"conversationId":"demo-1","question":"我叫小明，记住我"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+<li><p>查看会话历史消息（按 conversationId）</p><pre><code>curl http://localhost:8086/chat/history?conversationId=demo-1
+# 预期：{"conversationId":"demo-1","count":N,"messages":[...]}</code></pre></li>
+<li><p>清空某个会话的历史</p><pre><code>curl -X POST http://localhost:8086/chat/reset?conversationId=demo-1
+# 预期：{"success":true,"conversationId":"demo-1","message":"cleared"}</code></pre></li>
+</ol></div>
+<h4>⚡ 3 条命令快速验证 07-chat-memory</h4>
+<pre><code>curl -X POST http://localhost:8086/chat/ask -H 'Content-Type: application/json' -d '{"conversationId":"q1","question":"我叫小明"}'
+curl -X POST http://localhost:8086/chat/ask -H 'Content-Type: application/json' -d '{"conversationId":"q1","question":"我叫什么"}'
+curl "http://localhost:8086/chat/history?conversationId=q1"</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。ID 用来把消息按会话分箱。">
 <p><strong>Q1：</strong>conversationId 的作用是？</p>

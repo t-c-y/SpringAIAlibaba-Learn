@@ -32,7 +32,7 @@ public class PromptAssistantController {
     private final String apiKey;
 
     public PromptAssistantController(ChatClient.Builder builder,
-                                     @Value("${spring.ai.dashscope.chat.options.model:qwen-plus}") String model,
+                                     @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-plus}") String model,
                                      @Value("${spring.ai.dashscope.api-key:}") String apiKey) {
         this.assistantClient = builder
                 .defaultSystem("""

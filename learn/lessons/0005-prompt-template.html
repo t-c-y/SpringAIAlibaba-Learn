@@ -37,6 +37,26 @@ chatClient.prompt(p).call().content();</code></pre>
 <li>新增一个 <code>.st</code> 文件，做客服风格 Prompt。</li>
 </ol></div></section>
 
+<section>
+    <h2>动手验证：curl 快速调用</h2>
+    <p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+    <h3>🔹 <code>06-prompt-template</code>（端口 8085）</h3>
+    <p>启动：<code>cd demos/06-prompt-template &amp;&amp; mvn spring-boot:run</code></p>
+    <div class="practice"><ol>
+      <li><p>内联 PromptTemplate：一句话解释主题对受众的价值</p><pre><code>curl -X POST http://localhost:8085/tmpl/simple \
+  -H 'Content-Type: application/json'\
+  -d '{"topic":"RAG","audience":"Java 后端开发者"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+      <li><p>外部 .st 模板渲染：按 topic/level/audience/duration/role/style 生成课程，返回 {success,userMessage,answer}</p><pre><code>curl -X POST http://localhost:8085/tmpl/lesson \
+  -H 'Content-Type: application/json'\
+  -d '{"topic":"ChatMemory","level":"入门","audience":"Java 后端开发者","duration":"45 分钟","role":"Spring AI Alibaba 学习助手","style":"严谨、简洁、代码优先"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+    </ol></div>
+    <h4>⚡ 3 条命令快速验证 06-prompt-template</h4>
+    <pre><code>curl -X POST http://localhost:8085/tmpl/simple -H 'Content-Type: application/json' -d '{"topic":"RAG","audience":"Java 后端"}'
+curl -X POST http://localhost:8085/tmpl/lesson -H 'Content-Type: application/json' -d '{"topic":"ChatMemory","level":"入门","audience":"Java 后端开发者","duration":"45 分钟"}'</code></pre>
+  </section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。SystemPromptTemplate 返回 Message，PromptTemplate 返回 String。">
 <p><strong>Q1：</strong>用于生成一条 SystemMessage 的是？</p>

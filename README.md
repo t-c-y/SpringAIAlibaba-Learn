@@ -47,14 +47,8 @@ learn/reference/0001 ~ 0018-quick-reference.html   # 复习用速查卡
 
 仓库里所有 demo 默认使用 Spring Boot 3.3.5 + Spring AI Alibaba 1.0.0.2；涉及 RAG 的章节（12/13/14/15）同时升级到 Spring AI 1.1.0 以使用 `QuestionAnswerAdvisor`（原 `org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor` 在 1.1 中移至 `org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor`）。
 
-如果你本机的 `~/.m2/settings.xml` 配置了无法连通的内网 mirror（例如示例中的 `nexus.wdabuliu.com:9000`），
-`demos/13-pdf-rag/mvn-settings.xml` 自带一份指向阿里云公共镜像的备用 settings。启动任意 demo 时都可以复用：
-
-```bash
-mvn -s ../13-pdf-rag/mvn-settings.xml spring-boot:run
-```
-
-所有 19 个 demo 已通过 `mvn compile` 验证。
+所有 19 个 demo 已通过 `mvn compile` 验证。如果你本机的 `~/.m2/settings.xml` 配置了无法连通的内网 mirror，
+请自行修复或临时指向公共镜像（阿里云、Maven Central 等），再执行 `mvn spring-boot:run`。
 
 ### 章节 → Demo → 课程/参考 索引
 

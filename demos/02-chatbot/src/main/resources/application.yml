@@ -17,5 +17,5 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
       chat:
         options:
-          # qwen-plus 适合入门阶段验证通用问答能力。
-          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          # qwen3.7-plus 适合入门阶段验证通用问答能力。
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-plus}

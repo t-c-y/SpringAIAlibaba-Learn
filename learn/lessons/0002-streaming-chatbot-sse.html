@@ -130,6 +130,29 @@ public Flux&lt;String&gt; stream(@RequestBody AskRequest request) {
   </section>
 
   <section>
+    <h2>动手验证：curl 快速调用</h2>
+    <p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+    <h3>🔹 <code>03-streaming-chatbot</code>（端口 8082）</h3>
+    <p>启动：<code>cd demos/03-streaming-chatbot &amp;&amp; mvn spring-boot:run</code></p>
+    <div class="practice"><ol>
+      <li><p>状态检查（mode=streaming-sse）</p><pre><code>curl http://localhost:8082/chat/status
+# 预期：{"model":"qwen3.7-plus","apiKeyConfigured":true,...}</code></pre></li>
+      <li><p>同步问答（非流式）</p><pre><code>curl -X POST http://localhost:8082/chat/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"请用三点说明为什么 ChatBot 需要流式输出"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+      <li><p>SSE 流式输出，必须带 -N 不缓冲 + Accept: text/event-stream</p><pre><code>curl -N -X POST http://localhost:8082/chat/stream \
+  -H 'Content-Type: application/json' -H 'Accept: text/event-stream' \
+  -d '{"question":"请用三点解释 SSE 为什么适合 ChatBot"}'
+# 预期：text/event-stream 数据帧，逐段返回文字（data:你\ndata:好\n...\ndata:[DONE]）</code></pre></li>
+    </ol></div>
+    <h4>⚡ 3 条命令快速验证 03-streaming-chatbot</h4>
+    <pre><code>curl http://localhost:8082/chat/status
+curl -X POST http://localhost:8082/chat/ask -H 'Content-Type: application/json' -d '{"question":"为什么要流式输出"}'
+curl -N -X POST http://localhost:8082/chat/stream -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"question":"SSE 的原理"}'</code></pre>
+  </section>
+
+  <section>
     <h2>检索练习：不要看上文，先回答</h2>
 
     <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。.stream() 会进入流式响应模式。" data-wrong="再想想：同步调用用 call()，流式调用用哪个方法？">

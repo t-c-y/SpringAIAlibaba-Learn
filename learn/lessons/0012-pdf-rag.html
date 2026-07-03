@@ -29,6 +29,31 @@ vectorStore.add(new TokenTextSplitter(400, 200, ...).apply(docs));</code></pre><
 <li>调 <code>/pdf/retrieve</code>，看命中的 page 是否与回答一致。</li>
 </ol></div></section>
 
+<section>
+<h2>动手验证：curl 快速调用</h2>
+<p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+<h3>🔹 <code>13-pdf-rag</code>（端口 8092）</h3>
+<p>启动：<code>cd demos/13-pdf-rag &amp;&amp; mvn spring-boot:run</code></p>
+<div class="practice"><ol>
+<li><p>上传 PDF 并向量化（multipart/form-data，字段名 file）</p><pre><code>curl -X POST http://localhost:8092/pdf/upload \
+  -F 'file=@/absolute/path/to/your.pdf'
+# 示例：curl -X POST http://localhost:8092/pdf/upload -F 'file=@$HOME/Downloads/sample.pdf'
+# 预期：{"success":true,"fileName":"xxx.pdf","chunks":N}</code></pre></li>
+<li><p>按问题检索相关页（page/text/source）</p><pre><code>curl -X POST http://localhost:8092/pdf/retrieve \
+  -H 'Content-Type: application/json'\
+  -d '{"question":"这篇文档讲了什么"}'
+# 预期：{"hits":[{"source":"...","score":0.xx,"text":"..."}...],"question":"..."}</code></pre></li>
+<li><p>PDF RAG 问答，System Prompt 要求模型输出 [page N] 引用</p><pre><code>curl -X POST http://localhost:8092/pdf/ask \
+  -H 'Content-Type: application/json'\
+  -d '{"question":"文档第 3 页讲了什么？请标注页码"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+</ol></div>
+<h4>⚡ 3 条命令快速验证 13-pdf-rag</h4>
+<pre><code># 先准备一个 PDF，然后上传
+curl -X POST http://localhost:8092/pdf/upload -F 'file=@/absolute/path/to/your.pdf'
+curl -X POST http://localhost:8092/pdf/ask -H 'Content-Type: application/json' -d '{"question":"这篇文档讲了什么"}'</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="C" data-correct="正确。PagePdfDocumentReader 会带 page_number。">
 <p><strong>Q1：</strong>要在回答里带页码引用，前提是？</p>

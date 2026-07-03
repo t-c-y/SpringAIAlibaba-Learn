@@ -32,6 +32,25 @@ System Prompt + chunks + question → LLM → answer                       (Gene
 <li>调 <code>/rag/retrieve</code> 查看命中片段与 source。</li>
 </ol></div></section>
 
+<section><h2>动手验证：curl 快速调用</h2>
+<p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+<h3>🔹 <code>12-markdown-rag</code>（端口 8091）</h3>
+<p>启动：<code>cd demos/12-markdown-rag &amp;&amp; mvn spring-boot:run</code></p>
+<div class="practice"><ol>
+<li><p>仅检索不生成：查看召回的 markdown 片段（source/score/text），用于调试召回质量</p><pre><code>curl -X POST http://localhost:8091/rag/retrieve \
+  -H 'Content-Type: application/json'\
+  -d '{"question":"Spring AI Alibaba 支持哪些模型"}'
+# 预期：{"hits":[{"source":"...","score":0.xx,"text":"..."}...],"question":"..."}</code></pre></li>
+<li><p>RAG 问答：自动检索 topK=4 相关片段并注入 Prompt 生成回答</p><pre><code>curl -X POST http://localhost:8091/rag/ask \
+  -H 'Content-Type: application/json'\
+  -d '{"question":"ChatClient 怎么用？写一段最小示例"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+</ol></div>
+<h4>⚡ 3 条命令快速验证 12-markdown-rag</h4>
+<pre><code>curl -X POST http://localhost:8091/rag/retrieve -H 'Content-Type: application/json' -d '{"question":"Spring AI Alibaba 支持哪些模型"}'
+curl -X POST http://localhost:8091/rag/ask -H 'Content-Type: application/json' -d '{"question":"ChatClient 怎么用"}'</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。检索是把问题也转成向量后做相似度搜。">
 <p><strong>Q1：</strong>RAG 检索阶段用到？</p>

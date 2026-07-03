@@ -40,6 +40,30 @@ List&lt;Checkpoint&gt; list = chatClient.prompt()
 <li>把 record 加一个字段，重跑一遍，感受 schema 会自动带过去。</li>
 </ol></div></section>
 
+<section><h2>动手验证：curl 快速调用</h2>
+<p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+<h3>🔹 <code>05-structured-output</code>（端口 8084）</h3>
+<p>启动：<code>cd demos/05-structured-output &amp;&amp; mvn spring-boot:run</code></p>
+<div class="practice"><ol>
+<li><p>返回 LessonOutline（title/summary/sections[]/difficulty）</p><pre><code>curl -X POST http://localhost:8084/struct/lesson \
+  -H 'Content-Type: application/json'\
+  -d '{"topic":"Spring AI Alibaba ChatClient"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+<li><p>返回 List&lt;Checkpoint&gt;（id/description/verifyMethod），展示 ParameterizedTypeReference 用法</p><pre><code>curl -X POST http://localhost:8084/struct/checkpoints \
+  -H 'Content-Type: application/json'\
+  -d '{"topic":"RAG 检索增强生成"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+<li><p>反例：返回原始文本 rawText，用于对比说明 .entity() 的价值</p><pre><code>curl -X POST http://localhost:8084/struct/raw \
+  -H 'Content-Type: application/json'\
+  -d '{"topic":"Tool Calling"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+</ol></div>
+<h4>⚡ 3 条命令快速验证 05-structured-output</h4>
+<pre><code>curl -X POST http://localhost:8084/struct/lesson -H 'Content-Type: application/json' -d '{"topic":"Spring AI Alibaba ChatClient"}'
+curl -X POST http://localhost:8084/struct/checkpoints -H 'Content-Type: application/json' -d '{"topic":"RAG"}'
+curl -X POST http://localhost:8084/struct/raw -H 'Content-Type: application/json' -d '{"topic":"Tool Calling"}'</code></pre>
+</section>
+
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。BeanOutputConverter 内部做 schema + parse。" data-wrong="再想想。">
 <p><strong>Q1：</strong><code>.entity(X.class)</code> 内部会用哪个组件反序列化？</p>

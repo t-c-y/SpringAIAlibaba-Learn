@@ -99,6 +99,41 @@ DashScope / 百炼模型服务</code></pre>
   </section>
 
   <section>
+    <h2>动手验证：curl 快速调用</h2>
+    <p>前置条件：<code>export DASHSCOPE_API_KEY=你的 API Key</code>。启动对应 Demo（每个接口块第一行给出目录和端口），下面命令均可直接复制执行。</p>
+    <h3>🔹 <code>01-environment-check</code>（端口 8080）</h3>
+    <p>启动：<code>cd demos/01-environment-check &amp;&amp; mvn spring-boot:run</code></p>
+    <div class="practice"><ol>
+      <li><p>环境状态检查（不调模型）：返回应用名、模型、API Key 配置状态</p><pre><code>curl http://localhost:8080/env/status
+# 预期：{"model":"qwen3.7-plus","apiKeyConfigured":true,...}</code></pre></li>
+      <li><p>模型连通性检查：调用一次模型，返回 success/content/error</p><pre><code>curl http://localhost:8080/env/ping?message=请只回答OK
+# 预期：{"success":true,"content":"OK","model":"qwen3.7-plus"}</code></pre></li>
+    </ol></div>
+    <h4>⚡ 3 条命令快速验证 01-environment-check</h4>
+    <pre><code># 1) 环境状态检查
+curl http://localhost:8080/env/status
+# 2) 模型连通性
+curl http://localhost:8080/env/ping</code></pre>
+    <h3>🔹 <code>02-chatbot</code>（端口 8081）</h3>
+    <p>启动：<code>cd demos/02-chatbot &amp;&amp; mvn spring-boot:run</code></p>
+    <div class="practice"><ol>
+      <li><p>ChatBot 状态检查</p><pre><code>curl http://localhost:8081/chat/status
+# 预期：{"model":"qwen3.7-plus","apiKeyConfigured":true,...}</code></pre></li>
+      <li><p>同步问答，返回 {success,model,question,answer}</p><pre><code>curl -X POST http://localhost:8081/chat/ask \
+  -H 'Content-Type: application/json'\
+  -d '{"question":"请用三点说明 Spring AI Alibaba 在企业开发中的价值"}'
+# 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
+    </ol></div>
+    <h4>⚡ 3 条命令快速验证 02-chatbot</h4>
+    <pre><code># 1) 状态
+curl http://localhost:8081/chat/status
+# 2) 提问
+curl -X POST http://localhost:8081/chat/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"用一句话介绍 Spring AI Alibaba"}'</code></pre>
+  </section>
+
+  <section>
     <h2>检索练习：不要看上文，先回答</h2>
 
     <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。call() 会执行同步模型调用。" data-wrong="再想想：哪一步真的把请求发给模型服务？">
