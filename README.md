@@ -23,13 +23,62 @@
 
 ## 当前项目状态
 
-当前仓库已经包含前三个阶段 Demo：
+当前仓库已经包含 **全部 19 个阶段** 的 Demo、课程 HTML 与参考卡：
 
 ```text
-demos/01-environment-check
-demos/02-chatbot
-demos/03-streaming-chatbot
+demos/01-environment-check          demos/11-order-agent
+demos/02-chatbot                    demos/12-markdown-rag
+demos/03-streaming-chatbot          demos/13-pdf-rag
+demos/04-prompt-assistant           demos/14-rag-tuning
+demos/05-structured-output          demos/15-customer-service-agent
+demos/06-prompt-template            demos/16-graph-agent
+demos/07-chat-memory                demos/17-mcp-integration
+demos/08-learning-advisor           demos/18-observability-eval
+demos/09-calculator-tool            demos/19-agent-platform
+demos/10-weather-tool
+
+learn/lessons/0001 ~ 0018.html          # 每章的完整课程页
+learn/reference/0001 ~ 0018-quick-reference.html   # 复习用速查卡
 ```
+
+端口分配：`8080` (01) → `8098` (19)，每章递增 1，便于同时启动多个 demo 对比。
+
+### Maven 网络提示
+
+仓库里所有 demo 默认使用 Spring Boot 3.3.5 + Spring AI Alibaba 1.0.0.2；涉及 RAG 的章节（12/13/14/15）同时升级到 Spring AI 1.1.0 以使用 `QuestionAnswerAdvisor`（原 `org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor` 在 1.1 中移至 `org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor`）。
+
+如果你本机的 `~/.m2/settings.xml` 配置了无法连通的内网 mirror（例如示例中的 `nexus.wdabuliu.com:9000`），
+`demos/13-pdf-rag/mvn-settings.xml` 自带一份指向阿里云公共镜像的备用 settings。启动任意 demo 时都可以复用：
+
+```bash
+mvn -s ../13-pdf-rag/mvn-settings.xml spring-boot:run
+```
+
+所有 19 个 demo 已通过 `mvn compile` 验证。
+
+### 章节 → Demo → 课程/参考 索引
+
+| 阶段 | Demo | 端口 | 课程 | 参考卡 |
+| --- | --- | --- | --- | --- |
+| 01 | `01-environment-check` | 8080 | `lessons/0001-…` | `reference/0001-…` |
+| 02 | `02-chatbot` | 8081 | `lessons/0001-…` | `reference/0001-…` |
+| 03 | `03-streaming-chatbot` | 8082 | `lessons/0002-…` | `reference/0002-…` |
+| 04 | `04-prompt-assistant` | 8083 | `lessons/0003-prompt-assistant.html` | `reference/0003-…` |
+| 05 | `05-structured-output` | 8084 | `lessons/0004-structured-output.html` | `reference/0004-…` |
+| 06 | `06-prompt-template` | 8085 | `lessons/0005-prompt-template.html` | `reference/0005-…` |
+| 07 | `07-chat-memory` | 8086 | `lessons/0006-chat-memory.html` | `reference/0006-…` |
+| 08 | `08-learning-advisor` | 8087 | `lessons/0007-learning-advisor.html` | `reference/0007-…` |
+| 09 | `09-calculator-tool` | 8088 | `lessons/0008-calculator-tool.html` | `reference/0008-…` |
+| 10 | `10-weather-tool` | 8089 | `lessons/0009-weather-tool.html` | `reference/0009-…` |
+| 11 | `11-order-agent` | 8090 | `lessons/0010-order-agent.html` | `reference/0010-…` |
+| 12 | `12-markdown-rag` | 8091 | `lessons/0011-markdown-rag.html` | `reference/0011-…` |
+| 13 | `13-pdf-rag` | 8092 | `lessons/0012-pdf-rag.html` | `reference/0012-…` |
+| 14 | `14-rag-tuning` | 8093 | `lessons/0013-rag-tuning.html` | `reference/0013-…` |
+| 15 | `15-customer-service-agent` | 8094 | `lessons/0014-customer-service-agent.html` | `reference/0014-…` |
+| 16 | `16-graph-agent` | 8095 | `lessons/0015-graph-agent.html` | `reference/0015-…` |
+| 17 | `17-mcp-integration` | 8096 | `lessons/0016-mcp.html` | `reference/0016-…` |
+| 18 | `18-observability-eval` | 8097 | `lessons/0017-observability-eval.html` | `reference/0017-…` |
+| 19 | `19-agent-platform` | 8098 | `lessons/0018-agent-platform.html` | `reference/0018-…` |
 
 `01-environment-check` 用于验证 Spring AI Alibaba 开发环境，包含：
 

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 日志与评测</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0017 · Spring AI Alibaba</div>
+<h1>Agent 日志与评测：可观察 + 可评估</h1>
+<p>本课目标：为 Agent 装上"眼睛"和"考官"，把生产落地必需的观测/评测能力先跑起来。</p>
+<p class="small">配套 Demo：<code>demos/18-observability-eval</code>。参考卡：<a href="../reference/0017-observability-eval-quick-reference.html">观测评测快速参考</a>。</p></header>
+
+<section><h2>可观察</h2>
+<ul>
+<li>每次调用记录：question / answer / latencyMs / estTokens / userId / ts。</li>
+<li>教学版存内存，生产建议：ELK / Loki + OpenTelemetry Traces / Prometheus Metrics。</li>
+</ul></section>
+
+<section><h2>LLM-as-a-judge</h2>
+<p>准备"标准问题+标准答案"，让被评模型回答，再用另一个"评审模型"判定语义等价。</p>
+<div class="callout warning"><p>数值精确 / 事实类问题不适合 LLM 评审，请用规则或人工。</p></div></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>调 <code>/obs/ask</code> 若干次。</li>
+<li>调 <code>/obs/logs</code> 看日志结构。</li>
+<li>用 <code>/obs/eval</code> 跑一份 5 条的评测集，看通过率。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。语义等价类问题最适合 LLM 评审。">
+<p><strong>Q1：</strong>LLM-as-a-judge 最擅长哪类评测？</p>
+<div class="quiz-options"><button data-option="A">数值精度</button><button data-option="B">语义等价</button><button data-option="C">时间准确</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。发布前门禁是核心机制。">
+<p><strong>Q2：</strong>评测的"发布前门禁"最大价值？</p>
+<div class="quiz-options"><button data-option="A">避免回归</button><button data-option="B">跑得更快</button><button data-option="C">节省 token</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。三个维度都要覆盖。">
+<p><strong>Q3：</strong>观察 Agent 需要覆盖哪几类指标？</p>
+<div class="quiz-options"><button data-option="A">只看 latency</button><button data-option="B">只看成本</button><button data-option="C">质量+成本+延迟</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"如何做 red-team 评测集？"</li><li>"评测集怎么维护更新？"</li></ul></section>
+</main></body></html>

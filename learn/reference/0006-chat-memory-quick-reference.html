@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>ChatMemory 快速参考</h1></header>
+
+<section><h2>关键组件</h2>
+<div class="grid">
+<div class="card"><h3>ChatMemory</h3><p>存储抽象；InMemoryChatMemory 是教学版，生产建议 Redis / DB。</p></div>
+<div class="card"><h3>Advisor</h3><p>MessageChatMemoryAdvisor 负责读写记忆。</p></div>
+</div></section>
+
+<section><h2>关键参数</h2>
+<ul>
+<li><code>CHAT_MEMORY_CONVERSATION_ID_KEY</code>：会话标识，必须由服务端计算，不允许前端裸传。</li>
+<li><code>CHAT_MEMORY_RETRIEVE_SIZE_KEY</code>：每轮取回历史消息数上限，防上下文爆炸。</li>
+</ul></section>
+
+<section><h2>生产扩展方向</h2>
+<ul>
+<li>Redis-backed ChatMemory：多实例共享，加 TTL。</li>
+<li>Token 上限：超过阈值触发摘要（summarize）压缩。</li>
+<li>PII 脱敏：写入前对手机号、身份证等做 masking。</li>
+<li>可审计：记忆需要能被合规团队检索到。</li>
+</ul></section>
+</main></body></html>

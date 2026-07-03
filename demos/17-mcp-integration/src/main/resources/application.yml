@@ -1,0 +1,21 @@
+server:
+  # 教学阶段把“MCP Server”和“Agent”放在同一进程里跑在同一端口。生产上应当拆成两个服务。
+  port: 8096
+
+spring:
+  application:
+    name: spring-ai-alibaba-mcp-demo
+  ai:
+    retry:
+      max-attempts: 2
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
+      chat:
+        options:
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          temperature: 0.1
+
+mcp:
+  server:
+    baseUrl: http://localhost:8096

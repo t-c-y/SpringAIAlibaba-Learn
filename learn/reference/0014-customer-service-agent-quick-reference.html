@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>综合 Agent 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>Memory+RAG+Tool 快速参考</h1></header>
+
+<section><h2>组装</h2>
+<pre><code>builder.defaultAdvisors(
+    MessageChatMemoryAdvisor.builder(mem).build(),
+    QuestionAnswerAdvisor.builder(vs)
+        .searchRequest(SearchRequest.builder().topK(4).similarityThreshold(0.3).build())
+        .build())
+.defaultTools(tools)
+.build();</code></pre></section>
+
+<section><h2>分层建议</h2>
+<ul>
+<li>知识类问题 → RAG。</li>
+<li>业务操作 → Tool + 服务端权限校验。</li>
+<li>会话上下文 → Memory。</li>
+<li>写操作 → 显式 pending 状态 + 人工审批。</li>
+</ul></section>
+</main></body></html>

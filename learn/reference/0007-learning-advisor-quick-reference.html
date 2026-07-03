@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学习顾问快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>短期 + 长期记忆快速参考</h1></header>
+
+<section><h2>分工原则</h2>
+<ul>
+<li>短期：随时间失效的，例如"上一句话说了什么"。</li>
+<li>长期：稳定属性，例如姓名、岗位、偏好。</li>
+<li>写入长期一定要走确认路径（不能让模型说改就改）。</li>
+</ul></section>
+
+<section><h2>典型字段</h2>
+<pre><code>record LearnerProfile(
+  String userId,
+  String name,
+  String targetRole,
+  List&lt;String&gt; mastered,
+  List&lt;String&gt; learning,
+  String weeklyBudgetHours) {}</code></pre></section>
+
+<section><h2>演进路径</h2>
+<ol>
+<li>字段化画像（本课）。</li>
+<li>知识条目 + 向量检索（RAG 阶段）。</li>
+<li>结构化画像 + 事件日志（生产平台阶段）。</li>
+</ol></section>
+</main></body></html>

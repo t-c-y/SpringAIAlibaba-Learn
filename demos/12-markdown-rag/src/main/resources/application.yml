@@ -1,0 +1,20 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: spring-ai-alibaba-markdown-rag-demo
+  ai:
+    retry:
+      max-attempts: 2
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+      read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
+      chat:
+        options:
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          temperature: 0.2
+      embedding:
+        options:
+          # DashScope 文本 embedding 模型。
+          model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v2}

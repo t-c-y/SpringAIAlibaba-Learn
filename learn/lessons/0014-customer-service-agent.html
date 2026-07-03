@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智能客服 Agent 综合</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0014 · Spring AI Alibaba</div>
+<h1>智能客服 Agent：Memory + RAG + Tool 三合一</h1>
+<p>本课目标：把前面学的三大能力合到一个 Agent 上，理解 Advisor 顺序和"读工具/写工具"的分层。</p>
+<p class="small">配套 Demo：<code>demos/15-customer-service-agent</code>。参考卡：<a href="../reference/0014-customer-service-agent-quick-reference.html">综合 Agent 快速参考</a>。</p></header>
+
+<section><h2>数据流</h2>
+<pre><code>用户消息
+  ↓ MessageChatMemoryAdvisor 拼历史
+  ↓ QuestionAnswerAdvisor 检索知识库
+  ↓ LLM 决策
+  ↓ Tool (查订单 / 提交退款)
+  ↓ 生成回答
+  ↓ 记忆写回</code></pre></section>
+
+<section><h2>关键设计</h2>
+<ul>
+<li>知识库放"政策类"内容（退款/物流/保修）。</li>
+<li>业务动作走 Tool，Tool 内做权限校验。</li>
+<li>写操作（退款）返回 pending，明确告知"等人工审核"。</li>
+</ul></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>u001 问"我有哪些订单？"→ Tool 命中。</li>
+<li>u001 问"O-1002 已签收 3 天能退吗？"→ RAG + Tool 都命中。</li>
+<li>u001 说"帮我退 O-1002"→ Tool 返回 pending。</li>
+<li>u001 越权查 O-2001 → 返回无权限。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。Memory 在 RAG 之前，历史消息可以指导检索。">
+<p><strong>Q1：</strong>推荐的 Advisor 顺序？</p>
+<div class="quiz-options"><button data-option="A">Memory → RAG</button><button data-option="B">RAG → Memory</button><button data-option="C">顺序无所谓</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。写操作不能自动执行。">
+<p><strong>Q2：</strong>Agent 应如何处理退款？</p>
+<div class="quiz-options"><button data-option="A">直接调后台退款接口</button><button data-option="B">登记 pending 等人工确认</button><button data-option="C">拒绝退款</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。System 消息+工具描述共同守边界。">
+<p><strong>Q3：</strong>让 Tool 里的 currentUserId 别被模型污染，最有效方式？</p>
+<div class="quiz-options"><button data-option="A">temperature 调低</button><button data-option="B">只把 userId 放在 Header</button><button data-option="C">System Prompt 明确+Tool 描述明确+服务端注入</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"如何加个'转人工'工具？"</li><li>"如何做多轮记忆压缩？"</li></ul></section>
+</main></body></html>

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool Calling 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>Tool Calling 快速参考</h1></header>
+
+<section><h2>基本写法</h2>
+<pre><code>@Component class Tools {
+  @Tool(description = "…")
+  public X doIt(@ToolParam(description = "…") Y y) { ... }
+}
+builder.defaultTools(new Tools()).build();</code></pre></section>
+
+<section><h2>设计准则</h2>
+<ul>
+<li>命名和描述"面向调用方"：写"什么场景下用"，不写"内部实现"。</li>
+<li>参数用具体类型（double / String / record），避免 Object。</li>
+<li>写操作要幂等 / 需要人工确认，返回值里带 status。</li>
+<li>身份类字段（userId）不放参数，走会话上下文。</li>
+</ul></section>
+
+<section><h2>错误处理</h2>
+<ul>
+<li>业务级错误：返回结构化对象 <code>{allowed:false, reason:…}</code>，模型能友好化。</li>
+<li>技术级错误：抛异常，Spring AI 会把异常字符串给模型；一般会让模型再试或求助用户。</li>
+</ul></section>
+</main></body></html>

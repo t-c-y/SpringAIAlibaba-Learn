@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>RAG 快速参考</h1></header>
+
+<section><h2>标准链路</h2>
+<pre><code>TextReader / PdfReader → List&lt;Document&gt;
+    → TokenTextSplitter(chunk, overlap)
+    → vectorStore.add(chunks)
+
+SearchRequest.builder()
+    .query(q).topK(4).similarityThreshold(0.3).build();</code></pre></section>
+
+<section><h2>调参优先级</h2>
+<ol>
+<li>metadata 过滤（version / language / tenant）</li>
+<li>chunk 大小 &amp; overlap</li>
+<li>topK &amp; threshold</li>
+<li>换向量模型（最后手段）</li>
+</ol></section>
+
+<section><h2>System Prompt 建议</h2>
+<pre><code>只基于 context 回答；context 不足请说明；
+每条结论列出用到的 source 或 page。</code></pre></section>
+</main></body></html>

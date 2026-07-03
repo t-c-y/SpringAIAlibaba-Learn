@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF 知识库 RAG</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0012 · Spring AI Alibaba</div>
+<h1>PDF 知识库：按页引用与上传灌库</h1>
+<p>本课目标：会用 <code>PagePdfDocumentReader</code> 处理 PDF，让回答能标注 <code>[page N]</code> 引用。</p>
+<p class="small">配套 Demo：<code>demos/13-pdf-rag</code>。参考卡：<a href="../reference/0012-pdf-rag-quick-reference.html">PDF RAG 快速参考</a>。</p></header>
+
+<section><h2>关键差异</h2>
+<ul>
+<li>相比 TextReader，PagePdfDocumentReader 会在 Document metadata 上写入 page_number。</li>
+<li>System Prompt 里可要求模型在回答末尾用 <code>[page N]</code> 引用来源，实现可追溯。</li>
+<li>扫描版 PDF 需要先 OCR，本课不覆盖。</li>
+</ul></section>
+
+<section><h2>核心代码</h2>
+<pre><code>PagePdfDocumentReader reader = new PagePdfDocumentReader(pdf,
+    PdfDocumentReaderConfig.builder()
+        .withPagesPerDocument(1)
+        .build());
+List&lt;Document&gt; docs = reader.get();
+docs.forEach(d -> d.getMetadata().put("file_name", fileName));
+vectorStore.add(new TokenTextSplitter(400, 200, ...).apply(docs));</code></pre></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>上传一份产品手册 PDF：<code>curl -F 'file=@x.pdf' /pdf/upload</code></li>
+<li>问一个只有 PDF 里才有的问题，观察回答有 <code>[page N]</code>。</li>
+<li>调 <code>/pdf/retrieve</code>，看命中的 page 是否与回答一致。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。PagePdfDocumentReader 会带 page_number。">
+<p><strong>Q1：</strong>要在回答里带页码引用，前提是？</p>
+<div class="quiz-options"><button data-option="A">用更大模型</button><button data-option="B">加更多 chunk</button><button data-option="C">chunk metadata 里带 page_number</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。OCR 是先决条件。">
+<p><strong>Q2：</strong>扫描件 PDF 直接灌库？</p>
+<div class="quiz-options"><button data-option="A">不行，先 OCR</button><button data-option="B">直接可以</button><button data-option="C">只支持文本</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。要按业务粒度设置。">
+<p><strong>Q3：</strong>PdfDocumentReaderConfig.withPagesPerDocument 决定？</p>
+<div class="quiz-options"><button data-option="A">切片 token 上限</button><button data-option="B">每个 Document 包含多少页</button><button data-option="C">相似度阈值</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"能不能按章节切分？"</li><li>"如何做同 PDF 的版本管理？"</li></ul></section>
+</main></body></html>

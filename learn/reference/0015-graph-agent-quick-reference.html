@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>Graph 编排快速参考</h1></header>
+
+<section><h2>四要素</h2>
+<ol>
+<li>State：显式对象，节点读写。</li>
+<li>Node：处理一件事，返回下一个节点名。</li>
+<li>Transition：由代码决定，可用规则 + LLM 分类混合。</li>
+<li>Terminator：END + 步数守卫。</li>
+</ol></section>
+
+<section><h2>何时用 Graph</h2>
+<ul>
+<li>关键动作需要人工审批。</li>
+<li>回放和 A/B 测试是刚需。</li>
+<li>意图分支多、误路由成本高。</li>
+</ul></section>
+
+<section><h2>何时不用</h2>
+<ul>
+<li>简单单轮问答、纯知识检索。</li>
+<li>只需要 Memory + RAG 就能满足业务。</li>
+</ul></section>
+</main></body></html>

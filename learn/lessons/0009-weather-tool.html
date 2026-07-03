@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天气工具：外部 API 风格</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0009 · Spring AI Alibaba</div>
+<h1>天气工具：外部 API 风格的 Tool</h1>
+<p>本课目标：把 Tool 从"数学函数"升级到"外部 API 风格"，学会结构化返回 + 显式 error 字段的设计。</p>
+<p class="small">配套 Demo：<code>demos/10-weather-tool</code>。参考卡：<a href="../reference/0009-weather-tool-quick-reference.html">天气工具快速参考</a>。</p></header>
+
+<section><h2>教学取舍</h2>
+<div class="callout"><p>Demo 用内置 Mock 数据，不调真实气象 API。真实项目里替换成 RestClient 即可，方法签名不变。</p></div></section>
+
+<section><h2>设计要点</h2>
+<ul>
+<li>返回 record + <code>supported=false/reason</code>，让模型据此说人话，而不是抛异常。</li>
+<li>System Prompt 明确"必须调工具、不许口算"。</li>
+<li>参数命名与描述保持一致（<code>city=英文小写拼音</code>）。</li>
+</ul></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>问"明后天去杭州合适吗？" → 模型应先调 <code>forecast("hangzhou")</code>。</li>
+<li>问"成都天气如何？" → 应看到 supported=false 的话术。</li>
+<li>把 <code>currentWeather</code> 加一个 timezone 字段并让模型使用。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。结构化返回更利于模型说人话。">
+<p><strong>Q1：</strong>Tool 遇到未支持的城市，最好？</p>
+<div class="quiz-options"><button data-option="A">抛异常</button><button data-option="B">返回结构化 error</button><button data-option="C">返回 null</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。Prompt 引导 + 工具描述 一起决定行为。">
+<p><strong>Q2：</strong>让模型"必须调工具不许口算"的关键在？</p>
+<div class="quiz-options"><button data-option="A">temperature</button><button data-option="B">Tool 数量</button><button data-option="C">System Prompt + 工具 description</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。参数命名与描述要严格对齐。">
+<p><strong>Q3：</strong>Tool 参数写错格式怎么办？</p>
+<div class="quiz-options"><button data-option="A">规范参数命名 + description</button><button data-option="B">加更多 tool</button><button data-option="C">重启应用</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"接真实 API 需要注意什么？"</li><li>"如何加缓存？"</li></ul></section>
+</main></body></html>

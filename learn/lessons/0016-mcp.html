@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP 工具集成</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0016 · Spring AI Alibaba</div>
+<h1>MCP 工具集成：跨进程工具的动态发现</h1>
+<p>本课目标：理解 MCP 思想——工具通过标准协议**动态发现与调用**，而不是在编译期用 @Tool 注册。</p>
+<p class="small">配套 Demo：<code>demos/17-mcp-integration</code>。参考卡：<a href="../reference/0016-mcp-quick-reference.html">MCP 快速参考</a>。</p></header>
+
+<section><h2>MCP 是什么</h2>
+<ul>
+<li>Model Context Protocol：让工具方以标准协议对外暴露能力。</li>
+<li>Agent 侧：先 list_tools 拉清单，再按 name + args 调用。</li>
+<li>好处：跨进程、跨语言，能像"应用商店"一样加载工具。</li>
+</ul></section>
+
+<section><h2>教学取舍</h2>
+<div class="callout"><p>本课用 REST 模拟 MCP 协议：<code>GET /mcp/tools</code> 拉清单、<code>POST /mcp/call</code> 调工具。真实 MCP 是 JSON-RPC over stdio / SSE，语义完全一致。</p></div></section>
+
+<section><h2>核心流程</h2>
+<pre><code>Agent 启动 → listTools → 拼进 System Prompt
+用户提问 → LLM 输出 {"tool":..., "args":...} 或 {"final":...}
+Agent 解析 → 调 MCP Server → 返回结果 → 再交给 LLM → 循环 N 次</code></pre></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>启动 Demo，<code>curl /mcp/tools</code> 看清单。</li>
+<li>问 <code>/mcp-agent/ask</code>："帮我列出根目录文件"。</li>
+<li>问："搜索关键字 tool 并用一句话总结"。</li>
+<li>把 MockMcpServer 里加一个 <code>get_time</code> 工具，观察 Agent 自动能用。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。核心是动态发现。">
+<p><strong>Q1：</strong>MCP 相比 @Tool 的关键差异？</p>
+<div class="quiz-options"><button data-option="A">运行时动态发现</button><button data-option="B">跑得更快</button><button data-option="C">写更少代码</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。可选 stdio / SSE / websocket。">
+<p><strong>Q2：</strong>真实 MCP 常用传输是？</p>
+<div class="quiz-options"><button data-option="A">gRPC</button><button data-option="B">GraphQL</button><button data-option="C">JSON-RPC over stdio/SSE</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。必须限制步数。">
+<p><strong>Q3：</strong>Agent 与 MCP 服务器循环调用时？</p>
+<div class="quiz-options"><button data-option="A">无需限制</button><button data-option="B">最多 N 轮，明确终止条件</button><button data-option="C">让模型自由决定</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"如何把内部服务包成 MCP Server？"</li><li>"Agent 端如何审计和限速？"</li></ul></section>
+</main></body></html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>观测与评测快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>观测评测快速参考</h1></header>
+
+<section><h2>三大指标域</h2>
+<div class="grid">
+<div class="card"><h3>质量</h3><ul><li>评测集通过率</li><li>Red-team 未越权率</li></ul></div>
+<div class="card"><h3>成本</h3><ul><li>token 消耗</li><li>模型价格分层</li></ul></div>
+<div class="card"><h3>延迟</h3><ul><li>P50 / P95 / P99</li><li>各 Advisor 耗时</li></ul></div>
+</div></section>
+
+<section><h2>评测集覆盖面</h2>
+<ol>
+<li>Happy path（主流程）</li>
+<li>边界（超长输入、空输入、多语言）</li>
+<li>拒答（越权、不在知识库）</li>
+<li>Red-team（提示词注入、诱导 unsafe）</li>
+</ol></section>
+</main></body></html>

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt 模板快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>Prompt 模板快速参考</h1></header>
+<section><h2>三种典型场景</h2>
+<pre><code>// 1. 字符串直接渲染
+String u = new PromptTemplate("请解释 {topic} 对 {aud} 的价值").render(Map.of("topic","RAG","aud","后端"));
+
+// 2. 从 classpath 加载
+@Value("classpath:prompts/lesson.st") Resource res;
+String tmpl = new String(res.getInputStream().readAllBytes(), UTF_8);
+
+// 3. 组装多消息 Prompt
+Prompt p = new Prompt(List.of(sysMsg, new UserMessage(userText)));</code></pre></section>
+
+<section><h2>模板治理建议</h2>
+<ul>
+<li>一个业务场景一个模板文件，文件名与业务同名。</li>
+<li>模板里保留结构（角色/结构/边界）稳定，变量只承担"每次不同的信息"。</li>
+<li>模板上加版本号 header 注释，便于 review。</li>
+<li>灰度：v1.st / v2.st，配合流量分流。</li>
+</ul></section>
+</main></body></html>

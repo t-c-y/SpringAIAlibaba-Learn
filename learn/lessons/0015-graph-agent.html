@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph 客服 Agent</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0015 · Spring AI Alibaba</div>
+<h1>Graph 客服 Agent：显式状态机 + LLM 节点</h1>
+<p>本课目标：从"让 LLM 自由发挥"进化到"显式状态机 + LLM 节点"，掌握 Graph 编排思维。</p>
+<p class="small">配套 Demo：<code>demos/16-graph-agent</code>。参考卡：<a href="../reference/0015-graph-agent-quick-reference.html">Graph 快速参考</a>。</p></header>
+
+<section><h2>为什么要 Graph</h2>
+<ul>
+<li>关键动作要求"必须走人工审批"，纯 Prompt 很难保证。</li>
+<li>意图判错时要能诊断和回放，需要显式 trace。</li>
+<li>把 LLM 用在"擅长的地方"（意图分类、生成话术），把 transition 交给代码。</li>
+</ul></section>
+
+<section><h2>本课 Graph</h2>
+<pre><code>CLASSIFY
+├─ ORDER_QUERY
+├─ POLICY_QA
+├─ REFUND_CONFIRM (pending)
+├─ SMALL_TALK
+└─ FALLBACK</code></pre></section>
+
+<section><h2>关键实现</h2>
+<pre><code>while (!state.finished && guard++ < 16) {
+    trace.add(state.node);
+    state.node = step(state);
+}</code></pre>
+<p>state 显式记录 intent、vars、answerParts，节点之间通过 state 共享数据，最后统一到 END。</p></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>问不同类型问题（订单/政策/退款/闲聊），查看 <code>trace</code>。</li>
+<li>在 REFUND_CONFIRM 节点里加"人工审批"逻辑。</li>
+<li>把 CLASSIFY 换成更便宜的模型，观察准确率。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。Graph 的核心价值就是可回放、可测。">
+<p><strong>Q1：</strong>Graph 相比"纯 Advisor + Tool"最大的优势？</p>
+<div class="quiz-options"><button data-option="A">跑得更快</button><button data-option="B">可回放、可测、可插审批</button><button data-option="C">token 更少</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。守卫计数是必备。">
+<p><strong>Q2：</strong>Graph 循环怎么防死循环？</p>
+<div class="quiz-options"><button data-option="A">temperature 调低</button><button data-option="B">不用循环</button><button data-option="C">加最大步数守卫</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。LLM 判 intent、代码判 transition。">
+<p><strong>Q3：</strong>节点间跳转应该由谁决定？</p>
+<div class="quiz-options"><button data-option="A">代码逻辑</button><button data-option="B">LLM 自由发挥</button><button data-option="C">配置文件</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"什么时候用 Graph 什么时候用 Advisor？"</li><li>"Graph 里怎么插入人工确认？"</li></ul></section>
+</main></body></html>

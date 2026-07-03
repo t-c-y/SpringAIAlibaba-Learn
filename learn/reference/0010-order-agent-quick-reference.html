@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订单 Agent 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>业务 Tool + 权限快速参考</h1></header>
+
+<section><h2>身份注入</h2>
+<pre><code>// Controller
+UserContext.set(userId);
+try { ... } finally { UserContext.clear(); }
+
+// Tool
+String uid = UserContext.get();</code></pre></section>
+
+<section><h2>权限层次</h2>
+<ol>
+<li>网关：认证（Auth）。</li>
+<li>Controller：授权（Authorization）。</li>
+<li>Tool：数据可见性（Data-level）。</li>
+<li>业务：可审计的操作日志。</li>
+</ol></section>
+
+<section><h2>写操作模式</h2>
+<pre><code>1. Tool 只“提交待办”，返回 status=pending。
+2. 用户在业务系统里点确认，才真正执行。
+3. 提交时带幂等 key，避免多次执行。</code></pre></section>
+</main></body></html>

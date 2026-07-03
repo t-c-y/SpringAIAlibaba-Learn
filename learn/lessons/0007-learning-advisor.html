@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学习顾问 Memory</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0007 · Spring AI Alibaba</div>
+<h1>学习顾问 Memory：短期会话 + 长期画像</h1>
+<p>本课目标：在多轮记忆基础上叠加"用户画像"这一层长期记忆，理解两级记忆的分工。</p>
+<p class="small">配套 Demo：<code>demos/08-learning-advisor</code>。参考卡：<a href="../reference/0007-learning-advisor-quick-reference.html">学习顾问快速参考</a>。</p></header>
+
+<section><h2>两层记忆</h2>
+<div class="grid">
+<div class="card"><h3>短期 / 会话</h3><ul><li>ChatMemory 存储</li><li>conversationId 隔离</li><li>"这次会话说过的话"</li></ul></div>
+<div class="card"><h3>长期 / 画像</h3><ul><li>LearnerProfileStore 存储</li><li>userId 隔离</li><li>"稳定的用户属性"</li></ul></div>
+</div></section>
+
+<section><h2>怎么把画像给模型</h2>
+<p>不是每轮都塞 user 消息，而是**渲染进 System Prompt**：</p>
+<pre><code>String system = """
+你是学习顾问，服务对象画像：
+
+%s
+
+回答规则：...
+""".formatted(profile.toSystemFragment());</code></pre></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>建画像：<code>POST /advisor/profile</code></li>
+<li>问"下周该学什么？"，观察建议是否基于画像。</li>
+<li>不建画像直接问，对比差异。</li>
+<li>修改画像的 targetRole，再问同一问题。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。姓名 / 目标属于稳定属性。">
+<p><strong>Q1：</strong>"用户目标岗位是 AI 应用架构师"这条信息属于？</p>
+<div class="quiz-options"><button data-option="A">短期会话记忆</button><button data-option="B">长期用户画像</button><button data-option="C">Tool 返回值</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。写在 System Prompt 里，不需要每轮重复。">
+<p><strong>Q2：</strong>画像该在哪里被拼进 Prompt？</p>
+<div class="quiz-options"><button data-option="A">System Prompt</button><button data-option="B">每轮 user 消息末尾</button><button data-option="C">Tool 参数</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。避免模型误改画像。">
+<p><strong>Q3：</strong>模型自动"更新"画像该怎么处理？</p>
+<div class="quiz-options"><button data-option="A">直接落库</button><button data-option="B">丢弃</button><button data-option="C">走人工确认或专用工具</button></div><p class="quiz-feedback small"></p></div>
+</section>
+<section><h2>课后问答</h2><ul><li>"画像太多字段，会不会 System Prompt 太长？"</li><li>"能不能把画像存向量库，让模型自己检索？"</li></ul></section>
+</main></body></html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt 学习助手快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>Prompt 学习助手快速参考</h1>
+<p class="small">复习卡：三段式 System Prompt + 温度 + 业务字段。</p></header>
+
+<section><h2>三段式模板</h2>
+<pre><code># 角色
+你是&lt;某角色&gt;，服务&lt;某听众&gt;。
+# 输出结构
+1) 一句话结论
+2) 三点要点
+3) 最小代码
+4) 常见坑
+# 边界
+- 不确定要明说
+- 只回答与 XX 有关的问题</code></pre></section>
+
+<section><h2>建议参数</h2>
+<div class="grid">
+<div class="card"><h3>结构化 / 客服 / 政策</h3><ul><li>temperature: 0.1 ~ 0.3</li><li>输出要"稳"</li></ul></div>
+<div class="card"><h3>创意 / 头脑风暴</h3><ul><li>temperature: 0.7 ~ 1.0</li><li>输出要"散"</li></ul></div>
+</div></section>
+
+<section><h2>快速自检</h2>
+<ul>
+<li>System Prompt 里有没有"角色 + 结构 + 边界"三段？</li>
+<li>业务变量是不是留在了 user 消息？</li>
+<li>温度是不是与目的匹配？</li>
+<li>是否给了明确的"不知道就说不知道"边界？</li>
+</ul></section>
+
+<section><h2>常见坑</h2>
+<ul>
+<li>把"用户名字/日期"这类易变字段塞进 System Prompt → 会一直污染下去。</li>
+<li>没有"边界"段 → 模型容易越界胡编。</li>
+<li>结构太多层 → 模型抓不住重点，反而输出稀里糊涂。</li>
+</ul></section>
+</main></body></html>

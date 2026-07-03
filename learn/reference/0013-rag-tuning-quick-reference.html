@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 调参快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>RAG 调参快速参考</h1></header>
+
+<section><h2>经验区间</h2>
+<div class="grid">
+<div class="card"><h3>技术文档</h3><ul><li>chunk 600 ~ 800</li><li>overlap 150 ~ 200</li><li>topK 4 ~ 6</li></ul></div>
+<div class="card"><h3>FAQ / QA</h3><ul><li>chunk 200 ~ 400</li><li>overlap 40 ~ 100</li><li>topK 3 ~ 5</li></ul></div>
+</div></section>
+
+<section><h2>调参顺序</h2>
+<ol>
+<li>metadata 过滤（先切数据规模）</li>
+<li>chunk / overlap</li>
+<li>topK / threshold</li>
+<li>Prompt 重写（引用格式、拒答策略）</li>
+<li>换向量模型（最后手段）</li>
+</ol></section>
+</main></body></html>

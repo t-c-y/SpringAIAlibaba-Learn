@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt 学习助手</title>
+<link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script>
+</head><body><main>
+<header>
+<div class="eyebrow">Lesson 0003 · Spring AI Alibaba</div>
+<h1>Prompt 学习助手：让模型稳定回答</h1>
+<p>本课目标：会用 System Prompt 的“角色 + 输出结构 + 边界”三段式，让模型输出可预测的格式。</p>
+<p class="small">配套 Demo：<code>demos/04-prompt-assistant</code>。参考卡片：<a href="../reference/0003-prompt-assistant-quick-reference.html">Prompt 学习助手快速参考</a>。</p>
+</header>
+
+<section>
+<h2>核心心智模型</h2>
+<div class="callout"><p><strong>Prompt 工程不是让模型更聪明，而是让它更稳定。</strong>模型的能力是给定的，Prompt 用来"框住"它的输出。</p></div>
+<p>三段式 System Prompt：</p>
+<ol>
+<li><strong>角色</strong>：定义 AI 扮演什么角色、服务什么听众。</li>
+<li><strong>输出结构</strong>：定义每段回答长什么样，是分点、卡片还是四段式。</li>
+<li><strong>边界</strong>：定义 AI 不该做什么（不编造、只答某话题、不确定要明说）。</li>
+</ol>
+</section>
+
+<section>
+<h2>核心代码</h2>
+<pre><code>chatClient = builder.defaultSystem("""
+    # 角色
+    你是企业 Java + Spring AI Alibaba 学习助手。
+    # 输出结构
+    1) 【一句话结论】 2) 【三点要点】 3) 【最小代码示例】 4) 【常见坑】
+    # 边界
+    - 不确定的 API 一律说不确定。
+    - 只回答与 Java/Spring/AI Agent 相关问题。
+    """).build();</code></pre>
+<p>业务字段（topic / level / audience）应该拼进 <code>user()</code> 消息，<strong>不要</strong>塞进 System Prompt。</p>
+</section>
+
+<section>
+<h2>对比实验</h2>
+<p>Demo 提供两个接口：<code>/prompt/ask</code>（带 System Prompt） vs <code>/prompt/ask/raw</code>（不带）。同一个问题去问两次，一眼看出差异。</p>
+</section>
+
+<section>
+<h2>动手：跑 Demo</h2>
+<div class="practice"><ol>
+<li>设置 <code>DASHSCOPE_API_KEY</code></li>
+<li><code>cd demos/04-prompt-assistant && mvn spring-boot:run</code></li>
+<li>访问 <code>curl http://localhost:8083/prompt/status</code></li>
+<li>问同一个问题两次，分别用 <code>/prompt/ask</code> 和 <code>/prompt/ask/raw</code>，对比结构</li>
+<li>调 <code>/prompt/ask/lesson</code>：<code>{"topic":"ChatMemory","level":"入门","audience":"三年 Java"}</code></li>
+</ol></div>
+</section>
+
+<section>
+<h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。Prompt 工程的价值主要在稳定性和结构化。" data-wrong="想想：模型底子没变，Prompt 只是引导它。">
+<p><strong>Q1：</strong>Prompt 工程主要解决什么问题？</p>
+<div class="quiz-options"><button data-option="A">让模型更聪明</button><button data-option="B">让输出更稳定</button><button data-option="C">加快推理速度</button></div>
+<p class="quiz-feedback small">选择一个答案。</p>
+</div>
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。业务变量应留在 user 消息，System Prompt 是稳定的规则。" data-wrong="System Prompt 是相对稳定的规则，把易变字段塞进去会污染。">
+<p><strong>Q2：</strong>topic / level / audience 这类"每次不同的业务字段"应放在？</p>
+<div class="quiz-options"><button data-option="A">System Prompt</button><button data-option="B">Advisor 参数</button><button data-option="C">User 消息</button></div>
+<p class="quiz-feedback small">选择一个答案。</p>
+</div>
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。低温度让输出更贴近 System Prompt 的结构约束。" data-wrong="温度越高越发散。">
+<p><strong>Q3：</strong>为什么 Prompt 稳定输出场景常把 temperature 调低？</p>
+<div class="quiz-options"><button data-option="A">减少发散</button><button data-option="B">加速推理</button><button data-option="C">降低成本</button></div>
+<p class="quiz-feedback small">选择一个答案。</p>
+</div>
+</section>
+
+<section>
+<h2>课后问答</h2>
+<ul><li>"帮我把 System Prompt 改成客服风格。"</li><li>"温度 0.3 vs 0.7 对我的四段结构影响有多大？"</li><li>"下一课教我结构化 JSON 输出。"</li></ul>
+</section>
+</main></body></html>

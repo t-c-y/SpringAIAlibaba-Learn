@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF RAG 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>PDF RAG 快速参考</h1></header>
+
+<section><h2>依赖</h2>
+<pre><code>&lt;dependency&gt;
+  &lt;groupId&gt;org.springframework.ai&lt;/groupId&gt;
+  &lt;artifactId&gt;spring-ai-pdf-document-reader&lt;/artifactId&gt;
+&lt;/dependency&gt;</code></pre></section>
+
+<section><h2>两种 Reader</h2>
+<div class="grid">
+<div class="card"><h3>PagePdfDocumentReader</h3><p>按页产生 Document，元数据带 page_number。</p></div>
+<div class="card"><h3>ParagraphPdfDocumentReader</h3><p>按段落切分，保留章节结构（适合结构化手册）。</p></div>
+</div></section>
+
+<section><h2>Prompt 引用模板</h2>
+<pre><code>每条结论后用 [page N] 标注页码；
+若涉及多页请合并成 [page 3,5]。</code></pre></section>
+</main></body></html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多轮对话 Memory</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0006 · Spring AI Alibaba</div>
+<h1>多轮对话 Memory：会话上下文的第一课</h1>
+<p>本课目标：会用 <code>ChatMemory</code> + <code>MessageChatMemoryAdvisor</code> 给 ChatBot 装上记忆，通过 <code>conversationId</code> 隔离用户。</p>
+<p class="small">配套 Demo：<code>demos/07-chat-memory</code>。参考卡：<a href="../reference/0006-chat-memory-quick-reference.html">Memory 快速参考</a>。</p></header>
+
+<section><h2>三个组件</h2>
+<pre><code>ChatMemory memory = new InMemoryChatMemory();
+ChatClient client = builder.defaultAdvisors(
+    MessageChatMemoryAdvisor.builder(memory).build()
+).build();
+
+client.prompt().user(q).advisors(a -&gt; a
+    .param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, cid)
+    .param(AbstractChatMemoryAdvisor.CHAT_MEMORY_RETRIEVE_SIZE_KEY, 20))
+.call().content();</code></pre></section>
+
+<section><h2>Advisor 干了什么</h2>
+<ol>
+<li>请求前：按 <code>conversationId</code> 从 ChatMemory 读最近 N 条历史消息，拼进 Prompt。</li>
+<li>请求后：把最新一轮 user / assistant 写回 ChatMemory。</li>
+</ol></section>
+
+<section><h2>会话隔离</h2>
+<div class="callout warning"><p><strong>不传 conversationId 就默认合到 default 会话，用户之间会串数据。</strong> 生产必须由服务端根据用户 + 会话槽生成。</p></div></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>会话 A 说"我叫小张"，再问"我叫什么？" → 应答对。</li>
+<li>会话 B 问"我叫什么？" → 应回答不知道。</li>
+<li><code>/chat/history?conversationId=userA</code> 看历史。</li>
+<li><code>/chat/reset?conversationId=userA</code> 清空后再问。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。ID 用来把消息按会话分箱。">
+<p><strong>Q1：</strong>conversationId 的作用是？</p>
+<div class="quiz-options"><button data-option="A">让模型更聪明</button><button data-option="B">会话隔离</button><button data-option="C">加速检索</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。请求前后各做一次。">
+<p><strong>Q2：</strong>MessageChatMemoryAdvisor 在流程中的位置？</p>
+<div class="quiz-options"><button data-option="A">只在请求前</button><button data-option="B">只在请求后</button><button data-option="C">请求前后各一次</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。生产必须换 Redis / DB 版本。">
+<p><strong>Q3：</strong>InMemoryChatMemory 的局限？</p>
+<div class="quiz-options"><button data-option="A">进程内 + 重启丢</button><button data-option="B">不支持多会话</button><button data-option="C">性能差</button></div><p class="quiz-feedback small"></p></div>
+</section>
+<section><h2>课后问答</h2><ul><li>"上下文会不会无限增长？"</li><li>"多实例部署怎么共享记忆？"</li></ul></section>
+</main></body></html>

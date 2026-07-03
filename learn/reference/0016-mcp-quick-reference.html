@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>MCP 快速参考</h1></header>
+
+<section><h2>两个核心方法</h2>
+<pre><code>GET  /mcp/tools    → [{name, description, inputSchema}]
+POST /mcp/call     ← {toolName, arguments} → 结构化结果</code></pre></section>
+
+<section><h2>响应协议</h2>
+<pre><code>模型每步只输出：
+  {"tool":"list_files","args":{"dir":"/"}}
+  或 {"final":"给用户的中文回答"}</code></pre></section>
+
+<section><h2>生产要点</h2>
+<ul>
+<li>Server 端加鉴权 / 限流 / 审计。</li>
+<li>Client 端限制循环最大步数。</li>
+<li>写操作走 dryRun preview + 人工确认。</li>
+</ul></section>
+</main></body></html>

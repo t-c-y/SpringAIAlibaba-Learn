@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markdown 知识库 RAG</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0011 · Spring AI Alibaba</div>
+<h1>Markdown 知识库 RAG：Ingest → Retrieve → Generate</h1>
+<p>本课目标：跑通完整 RAG 链路，理解 chunk / topK / threshold / metadata 的角色。</p>
+<p class="small">配套 Demo：<code>demos/12-markdown-rag</code>。参考卡：<a href="../reference/0011-markdown-rag-quick-reference.html">RAG 快速参考</a>。</p></header>
+
+<section><h2>三步骤</h2>
+<pre><code>Markdown → TextReader → TokenTextSplitter → EmbeddingModel → VectorStore  (Ingest)
+Query → EmbeddingModel → similaritySearch(topK) → chunks              (Retrieve)
+System Prompt + chunks + question → LLM → answer                       (Generate)</code></pre></section>
+
+<section><h2>关键组件</h2>
+<div class="grid">
+<div class="card"><h3>SimpleVectorStore</h3><p>内存实现，学习首选，重启失效。</p></div>
+<div class="card"><h3>QuestionAnswerAdvisor</h3><p>自动检索 topK、拼进 Prompt。</p></div>
+</div></section>
+
+<section><h2>怎么调 chunk / topK</h2>
+<ul>
+<li>chunk 400 ~ 800 token 常用；FAQ / QA 库偏小 200 ~ 400。</li>
+<li>overlap ≈ chunk 的 20~30%。</li>
+<li>topK 4 起步，看命中质量后再调。</li>
+<li>similarityThreshold 先关（0），先看召回再加。</li>
+</ul></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>启动 Demo，问"RAG 的三个核心步骤是什么？"</li>
+<li>问一个知识库里没有的问题，应答"暂未收录"。</li>
+<li>调 <code>/rag/retrieve</code> 查看命中片段与 source。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。检索是把问题也转成向量后做相似度搜。">
+<p><strong>Q1：</strong>RAG 检索阶段用到？</p>
+<div class="quiz-options"><button data-option="A">JSON parse</button><button data-option="B">向量相似度搜索</button><button data-option="C">正则匹配</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。answer 错但 hit 对 → 生成问题；hit 就不对 → 检索问题。">
+<p><strong>Q2：</strong>回答不对时，先怎么定位？</p>
+<div class="quiz-options"><button data-option="A">看 /rag/retrieve 是否命中</button><button data-option="B">换更大模型</button><button data-option="C">加更多 tool</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。metadata 过滤性价比通常最高。">
+<p><strong>Q3：</strong>多版本文档最有效的处理方式？</p>
+<div class="quiz-options"><button data-option="A">chunk 变小</button><button data-option="B">换向量模型</button><button data-option="C">给 chunk 加 version metadata，检索时过滤</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"生产该用什么向量库？"</li><li>"如何评估召回质量？"</li></ul></section>
+</main></body></html>

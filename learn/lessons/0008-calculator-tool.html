@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool Calling 入门：计算器</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0008 · Spring AI Alibaba</div>
+<h1>Tool Calling 入门：计算器</h1>
+<p>本课目标：第一次让模型"调用你写的 Java 方法"，理解 @Tool 描述如何影响模型选择。</p>
+<p class="small">配套 Demo：<code>demos/09-calculator-tool</code>。参考卡：<a href="../reference/0008-calculator-tool-quick-reference.html">Tool Calling 快速参考</a>。</p></header>
+
+<section><h2>信息流</h2>
+<pre><code>用户 → ChatClient → LLM
+                    │  选工具、传参数
+                    ▼
+                  你的 Java 方法（@Tool）
+                    │  返回结果
+                    ▼
+                  LLM 综合成自然语言</code></pre></section>
+
+<section><h2>核心注解</h2>
+<pre><code>@Tool(description = "两个数相加，返回 a+b")
+public double add(@ToolParam(description = "第一个加数") double a,
+                  @ToolParam(description = "第二个加数") double b) { return a + b; }
+
+// 注册
+ChatClient c = builder.defaultTools(new CalculatorTools()).build();</code></pre>
+<p><strong>description 是模型选工具的主要依据</strong>，务必写清楚"什么场景下用"。</p></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>启动 <code>demos/09-calculator-tool</code></li>
+<li>问 <code>(18+27)*3/5</code>，观察日志能看到多次 tool call。</li>
+<li>把 description 改模糊，看模型是否还会用它。</li>
+<li>把 <code>divide</code> 里除数为 0 抛异常改成返回错误 record，对比效果。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。description 决定模型选不选。">
+<p><strong>Q1：</strong>@Tool 的 description 主要给谁看？</p>
+<div class="quiz-options"><button data-option="A">大模型</button><button data-option="B">Spring 容器</button><button data-option="C">HTTP 网关</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。低温度让模型严格按工具流程走。">
+<p><strong>Q2：</strong>Tool Calling 场景 temperature 建议？</p>
+<div class="quiz-options"><button data-option="A">0.7 ~ 1.0</button><button data-option="B">0.5</button><button data-option="C">0.1 ~ 0.3</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。单一职责让模型好选、参数简单、测试容易。">
+<p><strong>Q3：</strong>为什么建议一个 Tool 只做一件事？</p>
+<div class="quiz-options"><button data-option="A">运行更快</button><button data-option="B">单一职责好选好测</button><button data-option="C">占用 token 少</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"多个 Tool 描述冲突会怎样？"</li><li>"Tool 抛异常时模型看到什么？"</li></ul></section>
+</main></body></html>

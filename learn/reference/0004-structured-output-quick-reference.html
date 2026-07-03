@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>结构化输出快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>结构化输出快速参考</h1></header>
+
+<section><h2>三种典型用法</h2>
+<pre><code>// 1. 单对象
+X x = client.prompt().user("...").call().entity(X.class);
+
+// 2. 列表
+List&lt;X&gt; list = client.prompt().user("...").call()
+   .entity(new ParameterizedTypeReference&lt;List&lt;X&gt;&gt;() {});
+
+// 3. Map
+Map&lt;String, Object&gt; map = client.prompt().user("...").call()
+   .entity(new ParameterizedTypeReference&lt;Map&lt;String, Object&gt;&gt;() {});</code></pre></section>
+
+<section><h2>踩坑清单</h2>
+<ul>
+<li>字段名不一致 → 模型输出的 JSON 字段跟 record 对不上 → 转换失败或字段为 null。</li>
+<li>温度太高 → 模型加解释或包 ```json``` → 反序列化异常。</li>
+<li>字段类型用 Object → 模型可能给字符串给对象 → 类型不稳定。</li>
+<li>Java 17 record 是不可变的 → 反序列化只会走 canonical 构造器。</li>
+</ul></section>
+
+<section><h2>自检</h2>
+<ul>
+<li>是否为 record？字段类型是否具体？</li>
+<li>temperature ≤ 0.2？</li>
+<li>System Prompt 里有没有加"不要输出 ```json``` 包装、不要解释"？</li>
+</ul></section>
+</main></body></html>

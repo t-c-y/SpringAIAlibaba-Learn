@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订单查询 Agent</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0010 · Spring AI Alibaba</div>
+<h1>订单查询 Agent：业务 Tool + 权限守卫</h1>
+<p>本课目标：把 Tool 落到真实业务，掌握"用户身份不由模型决定"这一生产必修课。</p>
+<p class="small">配套 Demo：<code>demos/11-order-agent</code>。参考卡：<a href="../reference/0010-order-agent-quick-reference.html">订单 Agent 快速参考</a>。</p></header>
+
+<section><h2>三条边界</h2>
+<ol>
+<li>用户身份**不允许**模型自己填，必须来自服务端会话上下文（这里用 X-User-Id + ThreadLocal）。</li>
+<li>工具方法内部**必须做权限校验**，Prompt 是软规则不算数。</li>
+<li>写操作要走**人工确认 + 幂等 API**，本课只覆盖只读查询。</li>
+</ol></section>
+
+<section><h2>关键代码</h2>
+<pre><code>@Tool(description="按订单号查订单，非本人订单返回 allowed=false")
+public Map&lt;String,Object&gt; getOrderById(String orderId) {
+    String uid = UserContext.get(); // 从 ThreadLocal 拿
+    ...
+    if (!order.ownerUserId().equals(uid))
+        return Map.of("allowed", false, "reason", "not owner");
+    return Map.of("allowed", true, "order", order);
+}</code></pre>
+<p>Controller 中 <code>UserContext.set(userId)</code> / <code>finally UserContext.clear()</code>，避免 ThreadLocal 泄漏。</p></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>u001 查自己订单 → 正常返回。</li>
+<li>u001 越权查 O-2001 → 应"无权限或订单不存在"。</li>
+<li>试试不带 X-User-Id → 报错。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。绝不能让模型决定 userId。">
+<p><strong>Q1：</strong>userId 该从哪来？</p>
+<div class="quiz-options"><button data-option="A">模型参数</button><button data-option="B">服务端会话上下文</button><button data-option="C">前端 JSON</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。工具层守权限最靠谱。">
+<p><strong>Q2：</strong>权限校验放哪最稳？</p>
+<div class="quiz-options"><button data-option="A">System Prompt</button><button data-option="B">Controller</button><button data-option="C">Tool 方法内部</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。避免线程池复用时上下文串。">
+<p><strong>Q3：</strong>ThreadLocal 用完必须？</p>
+<div class="quiz-options"><button data-option="A">clear()</button><button data-option="B">flush()</button><button data-option="C">wait()</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"如果是异步反应式，ThreadLocal 就不能用了，用什么？"</li><li>"写操作的人工确认怎么落地？"</li></ul></section>
+</main></body></html>

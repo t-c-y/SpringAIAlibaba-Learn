@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 平台快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>企业 Agent 平台快速参考</h1></header>
+
+<section><h2>骨架</h2>
+<pre><code>interface Agent { String id(); String description(); AgentResponse handle(req); }
+class AgentRouter { Agent route(String question); }
+class RequestGuard { boolean tryAcquire(String userId); }
+class PlatformController { /* 组合上面三者 */ }</code></pre></section>
+
+<section><h2>逐步演进</h2>
+<ol>
+<li>加 Sentinel / Resilience4j 做流控。</li>
+<li>把 System Prompt / 路由规则挪到 Nacos。</li>
+<li>接入 OpenTelemetry Traces。</li>
+<li>把审计写 Kafka + ClickHouse。</li>
+<li>建立发布前评测门禁。</li>
+<li>模型 provider 抽象层：主备切换、成本路由。</li>
+</ol></section>
+
+<section><h2>安全与治理清单</h2>
+<ul>
+<li>提示词注入防护（输入过滤 + 输出审查）</li>
+<li>PII 脱敏</li>
+<li>越权访问日志</li>
+<li>模型输出内容审核（safety）</li>
+<li>成本上限告警</li>
+</ul></section>
+</main></body></html>

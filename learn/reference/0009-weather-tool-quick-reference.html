@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天气工具快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>外部 API 风格 Tool 快速参考</h1></header>
+
+<section><h2>返回结构模板</h2>
+<pre><code>record CurrentWeather(
+  boolean supported,     // 未支持城市 / 数据缺失时 false
+  String cityCode,
+  String cityName,
+  Integer temperatureC,
+  String condition,
+  Integer humidityPercent,
+  Integer windLevel,
+  String error) {}</code></pre></section>
+
+<section><h2>迁移到真实 API</h2>
+<ul>
+<li>用 RestClient / OkHttp，注意 connect / read / write 超时都要显式设置。</li>
+<li>加缓存（Caffeine，例如同城 5 分钟内复用）。</li>
+<li>把 API Key 用配置注入到 Tool 类，不通过 Prompt 传。</li>
+<li>把错误码到用户话术的映射放 Tool 内部，不要暴露给模型。</li>
+</ul></section>
+</main></body></html>

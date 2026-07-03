@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业级 Agent 平台原型</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0018 · Spring AI Alibaba</div>
+<h1>企业级 Agent 平台原型：装配前 17 课的能力</h1>
+<p>本课目标：把 Agent 抽象化，把多 Agent 路由、限流、审计装配成可扩展骨架。</p>
+<p class="small">配套 Demo：<code>demos/19-agent-platform</code>。参考卡：<a href="../reference/0018-agent-platform-quick-reference.html">Agent 平台快速参考</a>。</p></header>
+
+<section><h2>架构</h2>
+<pre><code>HTTP Ingress
+  ↓ RequestGuard 鉴权+限流
+  ↓ AgentRouter LLM 分类
+  ↓ Learning / CustomerService / Coding Agent
+  ↓ 统一审计日志</code></pre></section>
+
+<section><h2>关键组件</h2>
+<ul>
+<li><code>Agent</code>：接口抽象，每个 Agent 有 id / description / handle。</li>
+<li><code>AgentRouter</code>：用轻量分类模型选 Agent。</li>
+<li><code>RequestGuard</code>：教学限流，生产用 Sentinel。</li>
+<li>审计：把 request/response/latency 落盘。</li>
+</ul></section>
+
+<section><h2>成本设计</h2>
+<div class="callout"><p><strong>路由用便宜模型，业务用贵模型。</strong> 分类只需要 1~2 个字符输出，用便宜模型省成本。</p></div></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li><code>curl /platform/agents</code> 看已注册 Agent。</li>
+<li>问三类问题（代码/客服/学习），观察 routedAgent。</li>
+<li>1 分钟内快速调 25 次，命中限流。</li>
+<li>看 <code>/platform/audit</code> 是否记录完整。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。轻量分类模型省钱。">
+<p><strong>Q1：</strong>路由和业务用同一个大模型？</p>
+<div class="quiz-options"><button data-option="A">是</button><button data-option="B">否，路由用便宜模型</button><button data-option="C">看情况</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。规则 + 向量 + LLM 组合路由。">
+<p><strong>Q2：</strong>误路由率高时优先做？</p>
+<div class="quiz-options"><button data-option="A">加规则前置 + 拒答兜底</button><button data-option="B">换更大模型</button><button data-option="C">加更多 Agent</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。真实生产还差一堆。">
+<p><strong>Q3：</strong>下面哪个不是本课骨架已覆盖的能力？</p>
+<div class="quiz-options"><button data-option="A">路由</button><button data-option="B">审计</button><button data-option="C">灰度发布</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"如何做多租户？"</li><li>"模型主备切换怎么实现？"</li></ul></section>
+</main></body></html>

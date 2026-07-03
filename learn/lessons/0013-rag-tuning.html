@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 参数调优</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<header><div class="eyebrow">Lesson 0013 · Spring AI Alibaba</div>
+<h1>RAG 参数调优：把感觉变成实验</h1>
+<p>本课目标：会为不同的 (chunk, overlap) 组合建 profile，对比不同 topK / threshold 的召回和生成质量。</p>
+<p class="small">配套 Demo：<code>demos/14-rag-tuning</code>。参考卡：<a href="../reference/0013-rag-tuning-quick-reference.html">RAG 调参快速参考</a>。</p></header>
+
+<section><h2>四大调参维度</h2>
+<ul>
+<li><strong>chunkSize</strong>：太大丢粒度，太小语义碎裂。</li>
+<li><strong>overlap</strong>：≈ chunk 的 20~30%，兜住"关键句被切断"。</li>
+<li><strong>topK</strong>：太小漏，太大噪声挤掉有用片段。</li>
+<li><strong>similarityThreshold</strong>：过滤低质量命中的兜底。</li>
+</ul></section>
+
+<section><h2>评估方法</h2>
+<p>准备 10~20 条"标准问题 + 标准答案"，逐 profile 跑一遍，记 hit@k、准确率、成本、延迟。</p>
+<pre><code>| profile | 命中数 | 相关度 | 回答质量 | Prompt token |
+| 200-50  |        |        |          |               |
+| 400-100 |        |        |          |               |
+| 800-200 |        |        |          |               |</code></pre></section>
+
+<section><h2>动手</h2>
+<div class="practice"><ol>
+<li>POST <code>/rag/rebuild?chunk=200&amp;overlap=50</code></li>
+<li>POST <code>/rag/rebuild?chunk=800&amp;overlap=200</code></li>
+<li>用同一问题跑 <code>/rag/retrieve</code> 两次，比命中差异。</li>
+<li>用 <code>/rag/ask</code> 比最终回答差异。</li>
+</ol></div></section>
+
+<section><h2>检索练习</h2>
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。相关度是评估召回的核心。">
+<p><strong>Q1：</strong>调参最先要盯的指标？</p>
+<div class="quiz-options"><button data-option="A">命中相关度 (hit@k)</button><button data-option="B">token 数量</button><button data-option="C">latency</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。metadata 过滤性价比最高。">
+<p><strong>Q2：</strong>多版本 / 多租户先做？</p>
+<div class="quiz-options"><button data-option="A">调更大 chunk</button><button data-option="B">加更多向量</button><button data-option="C">加 metadata 过滤</button></div><p class="quiz-feedback small"></p></div>
+
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。有一份评测集才有"实验"可言。">
+<p><strong>Q3：</strong>做参数实验的前提？</p>
+<div class="quiz-options"><button data-option="A">先切换向量库</button><button data-option="B">准备标准问答对</button><button data-option="C">加大 topK</button></div><p class="quiz-feedback small"></p></div>
+</section>
+
+<section><h2>课后问答</h2><ul><li>"如何做成自动化评测？"</li><li>"chunk 过小怎么补救？"</li></ul></section>
+</main></body></html>
