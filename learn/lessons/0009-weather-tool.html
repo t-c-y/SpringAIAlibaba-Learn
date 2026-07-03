@@ -1,26 +1,118 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>天气工具：外部 API 风格</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天气工具：外部 API 风格</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0009 · Spring AI Alibaba</div>
 <h1>天气工具：外部 API 风格的 Tool</h1>
 <p>本课目标：把 Tool 从"数学函数"升级到"外部 API 风格"，学会结构化返回 + 显式 error 字段的设计。</p>
 <p class="small">配套 Demo：<code>demos/10-weather-tool</code>。参考卡：<a href="../reference/0009-weather-tool-quick-reference.html">天气工具快速参考</a>。</p></header>
 
+<section><h2>你今天要获得的一个能力</h2>
+<div class="callout"><p>能独立设计一个"外部 API 风格"的 Spring AI Tool：用 <code>@Tool</code> + <code>@ToolParam</code> 暴露能力，用结构化 record（含 <code>supported</code>/<code>error</code> 字段）返回结果，让模型在多工具场景下按 description 正确选工具、组合结果、并在失败时给出友好话术。</p></div></section>
+
 <section><h2>教学取舍</h2>
 <div class="callout"><p>Demo 用内置 Mock 数据，不调真实气象 API。真实项目里替换成 RestClient 即可，方法签名不变。</p></div></section>
+
+<section><h2>原理与机制：多工具场景下模型是怎么选工具的</h2>
+<p>从 0008 的 Calculator 单工具起步，真实业务里模型面前往往摆着一组工具：天气、交通、景点、餐厅、订单……模型并不会"看方法名"，它只看两件事：System Prompt 里的角色约束，以及每个 <code>@Tool(description=...)</code> / <code>@ToolParam(description=...)</code> 里写的自然语言描述。框架把所有工具签名序列化成一份 JSON Schema 发给模型，模型读完用户问题后自己决定：要不要调、调哪一个、参数填什么。</p>
+<pre><code>用户: "周末去哪玩？杭州和上海哪个合适？"
+        │
+        ▼
+┌────────────────────────────────────────────┐
+│ 模型读 tool schemas（JSON Schema 形式）    │
+│  - currentWeather(desc="查实时天气...")    │
+│  - forecast(desc="查未来3天预报...")       │
+│  (未来) - searchAttraction / queryTraffic  │
+└────────────────────────────────────────────┘
+        │ 决定：先 forecast("hangzhou") 再 forecast("shanghai")
+        ▼
+┌────────────────────────────────────────────┐
+│ Spring AI 回调 WeatherTools.forecast()     │
+│ 返回 ForecastResult（结构化 record）       │
+└────────────────────────────────────────────┘
+        │ tool result 作为 assistant message 回传
+        ▼
+┌────────────────────────────────────────────┐
+│ 模型组合两个城市的 forecast → 输出建议     │
+└────────────────────────────────────────────┘</code></pre>
+<p>关键点有三。第一，<strong>选工具是模型的决定</strong>，所以 description 的质量直接决定正确率；"模糊提问"（"周末去哪玩"）会触发多次串行工具调用，而不是一次——模型拿到杭州预报后才决定要不要再查上海。第二，<strong>工具结果要结构化</strong>：如果工具返回一段中文长文本，模型需要再"读"这段文本抽字段，容易丢信息也浪费 token；返回 record/Map（被框架自动转成 JSON），模型相当于直接拿到一个对象，组合推理更稳。第三，<strong>错误也是结果</strong>：城市不支持不要抛异常（抛异常会让框架把 stacktrace 回传给模型，脏上下文），而是返回 <code>supported=false</code> + <code>error</code> 字段，模型读到就会礼貌告知用户支持哪些城市。</p>
+<p>demo 09（calculator-tool）是单工具 + 纯函数场景，模型只能算对或算错；demo 10（本课）开始引入"外部 API 风格"的 mock 和显式错误字段；demo 11（order-agent）会进一步在多工具间加<strong>上下文</strong>（用户身份、订单状态），让工具结果根据会话上下文变化。这三个 demo 构成"函数 → API → 上下文 Agent"的三段爬坡。</p></section>
 
 <section><h2>设计要点</h2>
 <ul>
 <li>返回 record + <code>supported=false/reason</code>，让模型据此说人话，而不是抛异常。</li>
 <li>System Prompt 明确"必须调工具、不许口算"。</li>
 <li>参数命名与描述保持一致（<code>city=英文小写拼音</code>）。</li>
+<li>多个工具靠 <code>@Tool(description)</code> 做路由，description 要写清"什么场景用、参数格式、失败时返回什么"。</li>
 </ul></section>
+
+<section><h2>核心 API 与代码：WeatherTools 源码导读</h2>
+<p>下面是 demo 中 <code>WeatherTools</code> 的核心骨架（省略重复代码）。请重点看三件事：description 怎么写、参数怎么标注、错误怎么结构化返回。</p>
+<pre><code>@Component
+public class WeatherTools {
+
+    // Mock 数据：真实项目换成 RestClient / WebClient 调用外部 API
+    private static final Map&lt;String, Snapshot&gt; CITY_MOCK = Map.of(
+            "beijing",  new Snapshot("北京", 18, "多云", 45, 3),
+            "shanghai", new Snapshot("上海", 22, "小雨", 78, 4),
+            "hangzhou", new Snapshot("杭州", 24, "阴",  65, 2),
+            "shenzhen", new Snapshot("深圳", 28, "晴",  55, 3)
+    );
+
+    @Tool(description = """
+            查询指定城市当前天气。适用于用户询问"现在的天气/温度/湿度"等实时信息。
+            city 需要使用城市英文小写拼音，例如 beijing / shanghai / hangzhou / shenzhen。
+            如果城市未支持，会返回 supported=false 让上层告知用户。
+            """)
+    public CurrentWeather currentWeather(
+            @ToolParam(description = "城市英文小写拼音，例如 beijing") String city) {
+        Snapshot s = CITY_MOCK.get(city == null ? "" : city.toLowerCase());
+        if (s == null) {
+            // 关键：不要抛异常，返回带 error 的结构化对象
+            return new CurrentWeather(false, city, null, null, null, null, null,
+                    "unsupported city: " + city + "; supported=" + CITY_MOCK.keySet());
+        }
+        return new CurrentWeather(true, city, s.displayName(), s.temperatureC(),
+                s.condition(), s.humidityPercent(), s.windLevel(), null);
+    }
+
+    // record 字段名要清晰，模型会直接看到 JSON key
+    public record CurrentWeather(boolean supported, String cityCode, String cityName,
+                                 Integer temperatureC, String condition,
+                                 Integer humidityPercent, Integer windLevel,
+                                 String error) {}
+    public record ForecastResult(boolean supported, String cityCode,
+                                 List&lt;ForecastDay&gt; days, String error) {}
+    public record ForecastDay(String date, int minC, int maxC, String condition) {}
+}</code></pre>
+<p>注册工具只需要一行 <code>.defaultTools(tools)</code>，Spring AI 会自动扫描 <code>@Tool</code> 注解并把方法签名转成模型能看懂的 JSON Schema：</p>
+<pre><code>this.chatClient = builder
+    .defaultSystem("""
+            你是一名"出行天气助手"。规则：
+            1. 涉及具体城市天气/温度/出行建议时，必须先调用工具，禁止凭想象回答。
+            2. 工具返回 supported=false 时，礼貌告知用户目前支持的城市列表。
+            3. 最终回答使用中文，先给结论（是否适合出行），再给数据依据。
+            """)
+    .defaultTools(tools)   // &lt;-- 注册所有 @Tool 方法
+    .build();</code></pre>
+<div class="callout"><p><strong>为什么返回 Map/record 比返回自然语言好？</strong> 框架会把工具返回值序列化成 JSON 塞进对话历史。结构化 JSON 的 token 数更可控、字段语义清晰（模型直接拿到 <code>temperatureC=22</code> 而不是要从"今天上海 22 度有小雨"里再抽数字），并且同一份结果可以被多个后续推理步骤复用（例如"周末去哪玩"要同时比较两个城市）。</p></div></section>
+
+<section><h2>工具结果回传的最佳实践</h2>
+<div class="grid">
+<div class="card"><h3>结构化优先</h3><p>返回 record / Map / List，字段名用英文且语义明确（<code>temperatureC</code>、<code>condition</code>），避免长段中文。时间用 ISO 格式 <code>yyyy-MM-dd</code>。</p></div>
+<div class="card"><h3>错误也要结构化</h3><p>不抛异常，返回形如 <code>{supported:false, error:"city not found", available:["beijing","shanghai",...]}</code>。模型能据此给出"暂不支持成都，目前支持北京/上海/杭州/深圳"这种友好话术。</p></div>
+<div class="card"><h3>描述要写"场景"</h3><p><code>@Tool(description)</code> 要写清"用户问什么的时候该用我"，这是多工具选路由的唯一依据。例如 <code>forecast</code> 的描述里要出现"未来几天/周末/出行安排"这些触发词。</p></div>
+<div class="card"><h3>参数要做归一化</h3><p>模型可能传"北京市""北京""beijing""Beijing"——在方法体第一行统一 <code>toLowerCase()</code>、去"市/省"后缀、做别名映射（"魔都"→"shanghai"），再去查数据源。</p></div>
+</div></section>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
 <li>问"明后天去杭州合适吗？" → 模型应先调 <code>forecast("hangzhou")</code>。</li>
 <li>问"成都天气如何？" → 应看到 supported=false 的话术。</li>
 <li>把 <code>currentWeather</code> 加一个 timezone 字段并让模型使用。</li>
+<li>追加一个"模糊提问"实验：问"周末想出去玩，北京和杭州哪个合适？"观察模型是否串行调用两次 forecast 再做比较。</li>
 </ol></div></section>
 
 <section>
@@ -35,8 +127,56 @@
 # 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
   </ol></div>
   <h4>⚡ 3 条命令快速验证 10-weather-tool</h4>
-  <pre><code>curl -X POST http://localhost:8089/weather/ask -H 'Content-Type: application/json' -d '{"question":"北京今天天气怎么样"}'</code></pre>
+  <pre><code># 1) 查询单个城市实时天气
+curl -X POST http://localhost:8089/weather/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"北京今天天气怎么样"}'
+# 2) 多城市对比 + 出行建议，模型会多次调工具再综合回答
+curl -X POST http://localhost:8089/weather/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"北京和上海今天哪里更适合户外跑步？"}'
+# 3) 未来天气预报调用 forecast 工具
+curl -X POST http://localhost:8089/weather/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"杭州未来三天会下雨吗？要不要带伞"}'</code></pre>
 </section>
+
+<section><h2>关键参数与配置</h2>
+<table>
+<thead><tr><th>项</th><th>位置</th><th>默认/示例</th><th>什么时候调</th></tr></thead>
+<tbody>
+<tr><td><code>@Tool(description)</code></td><td>方法注解</td><td>必填</td><td>多工具路由的唯一依据，必须写清"什么问法触发我"。</td></tr>
+<tr><td><code>@ToolParam(description)</code></td><td>参数注解</td><td>可选但建议</td><td>参数含义/格式/示例有歧义时必写（例如 city="城市英文小写拼音"）。</td></tr>
+<tr><td><code>spring.ai.dashscope.api-key</code></td><td>application.yml</td><td>空</td><td>通过环境变量 <code>DASHSCOPE_API_KEY</code> 注入，生产放配置中心（Nacos/ACM）。</td></tr>
+<tr><td><code>ChatClient.defaultTools(tools)</code></td><td>Builder 方法</td><td>—</td><td>注册工具；可用 <code>tools(Object...)</code> 在单次 prompt 级别覆盖/追加。</td></tr>
+<tr><td>toolCallBack / returnDirect</td><td>框架高级选项</td><td>false</td><td>需要"工具结果直接返回给用户不再经过模型"时使用（例如纯算术）。</td></tr>
+<tr><td>超时设置</td><td>RestClient/WebClient</td><td>无默认</td><td>调真实外部 API 必须配 connect/read timeout，建议 2-5s。</td></tr>
+</tbody></table>
+<p class="small">说明：Spring AI Alibaba 当前版本工具注册以"方法级 <code>@Tool</code>"为主；类级 <code>@Tool</code> 也支持（类名作为命名空间），企业项目里推荐"一个业务域一个 <code>*Tools</code> 类"。</p>
+
+<div class="grid">
+<div class="card"><h3>demo 09（09-calculator-tool）</h3><p>单工具、纯函数、参数是数字、结果确定性强。用来理解最基本的 tool calling 往返。</p></div>
+<div class="card"><h3>demo 10（本课，10-weather-tool）</h3><p>多工具（currentWeather + forecast）、外部 API 风格、引入 mock 与结构化错误返回。</p></div>
+<div class="card"><h3>demo 11（11-order-agent）</h3><p>工具依赖会话上下文（用户 id、订单状态），工具之间有因果关系，真正接近"Agent"形态。</p></div>
+</div></section>
+
+<section><h2>边界与常见坑</h2>
+<div class="callout warning">
+<ol>
+<li><strong>外部 API 必须加超时、熔断、重试</strong>：模型一次提问可能触发多次工具调用（"周末去哪玩"会并/串行调多次 forecast），一次慢查询会把整条链路拖到 30s 以上。生产请接入 Resilience4j（<code>@TimeLimiter</code>+<code>@CircuitBreaker</code>）或 Sentinel，超时降级为返回 <code>{supported:false, error:"天气服务暂不可用"}</code>，而不是抛异常。</li>
+<li><strong>API Key 严禁写在 yml 里提交到 Git</strong>：<code>spring.ai.dashscope.api-key</code> 通过环境变量 / Nacos / 阿里云 KMS 注入；CI 里用 Secret；多环境（dev/staging/prod）分开 Key，避免配额被刷爆时全站受影响。</li>
+<li><strong>参数归一化一定在 Tool 方法里做</strong>：模型会传"北京""北京市""beijing""Beijing""首都"各种形态。仅靠 <code>@ToolParam(description)</code> 约束不够——要在方法入口 <code>trim().toLowerCase()</code>、建别名字典（"魔都"→"shanghai"）、去掉"市/省/区"后缀；未识别的不要返回 500，返回结构化错误让模型告诉用户。</li>
+<li><strong>Mock 数据只用于教学，生产必须换真实 API + 缓存</strong>：天气这种分钟/小时级变化的数据适合 Caffeine/Redis 做 TTL=10min 的缓存，按 city 维度缓存，能把外部 QPS 压到原来的 1/100 以下。注意缓存 key 必须用归一化后的 city code。</li>
+<li><strong>不要在 Tool 里做阻塞 IO 占满 Tomcat 线程</strong>：当单次请求会触发 N 次工具调用时，务必用 WebClient 响应式调用，或把 Tool 方法标记为异步返回，否则高并发下很快打满 200 个 Tomcat 线程。</li>
+</ol></div></section>
+
+<section><h2>主资料</h2>
+<ul>
+<li>Spring AI 官方文档 · Tool Calling：<a href="https://docs.spring.io/spring-ai/reference/api/tools.html" target="_blank" rel="noopener">docs.spring.io/spring-ai/reference/api/tools.html</a></li>
+<li>Spring AI Alibaba 仓库（含 weather/order 等 demo）：<a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba</a></li>
+<li>阿里云百炼 · Function Calling 指南：<a href="https://help.aliyun.com/zh/model-studio/user-guide/function-calling" target="_blank" rel="noopener">help.aliyun.com/zh/model-studio/user-guide/function-calling</a></li>
+<li>Spring AI Alibaba 中文社区站：<a href="https://java2ai.com" target="_blank" rel="noopener">java2ai.com</a></li>
+</ul></section>
 
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="B" data-correct="正确。结构化返回更利于模型说人话。">
@@ -52,5 +192,9 @@
 <div class="quiz-options"><button data-option="A">规范参数命名 + description</button><button data-option="B">加更多 tool</button><button data-option="C">重启应用</button></div><p class="quiz-feedback small"></p></div>
 </section>
 
-<section><h2>课后问答</h2><ul><li>"接真实 API 需要注意什么？"</li><li>"如何加缓存？"</li></ul></section>
+<section><h2>课后问答</h2><ul>
+<li>"接真实气象 API（和风/OpenWeather）要改哪些地方？超时、熔断、缓存、API Key 分别落在哪一层？"</li>
+<li>"用户说'周末想出去玩，帮我选个城市'，模型会调几次工具、以什么顺序？我怎么观测到整个链路？"</li>
+<li>"如果我要再加一个'查景点'工具（searchAttraction），<code>@Tool(description)</code> 应该怎么写才能和天气工具不冲突？"</li>
+</ul></section>
 </main></body></html>

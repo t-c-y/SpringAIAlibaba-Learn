@@ -1,10 +1,17 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>订单查询 Agent</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订单查询 Agent</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0010 · Spring AI Alibaba</div>
 <h1>订单查询 Agent：业务 Tool + 权限守卫</h1>
 <p>本课目标：把 Tool 落到真实业务，掌握"用户身份不由模型决定"这一生产必修课。</p>
 <p class="small">配套 Demo：<code>demos/11-order-agent</code>。参考卡：<a href="../reference/0010-order-agent-quick-reference.html">订单 Agent 快速参考</a>。</p></header>
+
+<div class="callout">
+<p><strong>你今天要获得的一个能力：</strong>能给 Spring AI Agent 的 Tool 方法安全地注入当前登录用户身份，彻底杜绝让大模型传 <code>userId</code> 导致的越权漏洞——你会用 <code>ThreadLocal</code> 把 HTTP 头里的 <code>X-User-Id</code> 一路透传到 <code>@Tool</code> 方法内部，并写出生产级的权限守卫。</p>
+</div>
 
 <section><h2>三条边界</h2>
 <ol>
@@ -13,16 +20,191 @@
 <li>写操作要走**人工确认 + 幂等 API**，本课只覆盖只读查询。</li>
 </ol></section>
 
-<section><h2>关键代码</h2>
-<pre><code>@Tool(description="按订单号查订单，非本人订单返回 allowed=false")
-public Map&lt;String,Object&gt; getOrderById(String orderId) {
-    String uid = UserContext.get(); // 从 ThreadLocal 拿
-    ...
-    if (!order.ownerUserId().equals(uid))
-        return Map.of("allowed", false, "reason", "not owner");
-    return Map.of("allowed", true, "order", order);
+<section><h2>原理：带身份上下文的工具调用链</h2>
+<p>为什么<strong>绝不能</strong>把 <code>userId</code> 做成 <code>@Tool</code> 方法的入参？因为大模型在填 tool call 参数时完全不受你控制——它可能从用户的自然语言里"猜"一个 userId（"帮我查 u002 的订单"），可能 hallucinate 一个不存在的 ID，更糟的是攻击者可以在 prompt 里注入 <code>userId=admin</code>。模型传参 = 把身份认证交给了最不可信的一环。</p>
+<p>正确做法是<strong>把身份从模型视野中彻底拿掉</strong>：HTTP 入口处从可信来源（JWT / Session / 网关签名头）解析用户 ID，写入 <code>ThreadLocal</code>，后面整条调用链——Controller → ChatClient → Tool 执行器 → <code>@Tool</code> 方法——都从 <code>ThreadLocal</code> 读取，请求结束在 <code>finally</code> 中清空。模型根本不知道 <code>userId</code> 存在，也就无从伪造。</p>
+
+<pre><code>┌──────────┐  X-User-Id: u001   ┌─────────────┐
+│  Client  │ ─────────────────▶ │ Controller  │
+└──────────┘  (网关/JWT校验后)    └──────┬──────┘
+                                       │ UserContext.set("u001")
+                                       ▼
+                              ┌─────────────────┐
+                              │   ChatClient    │
+                              │  .prompt(...)   │
+                              │  .tools(orderT) │──┐
+                              └─────────────────┘  │
+                                                   │ Spring AI 反射调用
+                                                   ▼
+                              ┌──────────────────────────┐
+                              │  @Tool listMyOrders()    │
+                              │  @Tool getOrderById(id)  │
+                              │  @Tool cancelOrder(id)   │
+                              │     │                    │
+                              │     ▼                    │
+                              │  UserContext.get()       │
+                              │   → "u001" (可信)        │
+                              │     │                    │
+                              │     ▼                    │
+                              │  订单服务按 uid 查询      │
+                              │  + 二次权限校验           │
+                              └──────────────────────────┘
+                                       │
+                              finally { UserContext.clear() }
+                              (防止线程池复用串号)</code></pre>
+
+<p>这条链路的核心只有一句话：<strong>身份来自服务端上下文，不来自模型生成的参数</strong>。ThreadLocal 只是最简单的实现；在 WebFlux 反应式场景替换为 <code>Reactor Context</code>，在 gRPC 场景替换为 <code>Context.Key</code>，原理完全一致。</p>
+</section>
+
+<section><h2>核心代码：OrderTools + UserContext</h2>
+<p>以下是订单 Agent 的完整工具类，三个方法<strong>都不接收 userId 参数</strong>，统一从 <code>UserContext.currentUserId()</code> 读取当前调用者身份。这是企业级"行级权限"的最小正确实现。</p>
+
+<h3>1) UserContext：ThreadLocal 持有者</h3>
+<pre><code>public final class UserContext {
+    private static final ThreadLocal&lt;String&gt; UID = new ThreadLocal&lt;&gt;();
+
+    public static void set(String uid)  { UID.set(uid); }
+    public static String currentUserId() {
+        String uid = UID.get();
+        if (uid == null) throw new IllegalStateException("未登录，X-User-Id 缺失");
+        return uid;
+    }
+    public static void clear()          { UID.remove(); }
 }</code></pre>
-<p>Controller 中 <code>UserContext.set(userId)</code> / <code>finally UserContext.clear()</code>，避免 ThreadLocal 泄漏。</p></section>
+
+<h3>2) OrderTools：所有 @Tool 方法从上下文取 uid</h3>
+<pre><code>@Component
+public class OrderTools {
+    private final OrderRepository orders;
+
+    public OrderTools(OrderRepository orders) { this.orders = orders; }
+
+    @Tool(description = "列出当前用户的所有订单")
+    public List&lt;OrderView&gt; listMyOrders() {
+        String uid = UserContext.currentUserId(); // 不从参数拿
+        return orders.findByUserId(uid);          // 强制按 uid 过滤
+    }
+
+    @Tool(description = "按订单号查询单个订单，非本人订单返回无权限")
+    public Map&lt;String, Object&gt; getOrder(String orderId) {
+        String uid = UserContext.currentUserId();
+        Order o = orders.findById(orderId).orElse(null);
+        if (o == null)            return Map.of("found", false);
+        if (!o.getUserId().equals(uid)) {
+            // 关键：即便 orderId 存在，非本人也返回"查无此单"，
+            // 避免攻击者枚举订单号探测订单是否存在
+            return Map.of("found", false, "hint", "订单不存在或无权限");
+        }
+        return Map.of("found", true, "order", o);
+    }
+
+    @Tool(description = "取消订单。订单必须属于当前用户且状态为待支付。")
+    public Map&lt;String, Object&gt; cancelOrder(String orderId) {
+        String uid = UserContext.currentUserId();
+        Order o = orders.findById(orderId).orElse(null);
+        if (o == null || !o.getUserId().equals(uid))
+            return Map.of("ok", false, "msg", "订单不存在");
+        if (o.getStatus() != OrderStatus.PENDING_PAYMENT)
+            return Map.of("ok", false, "msg", "当前状态不允许取消");
+        o.setStatus(OrderStatus.CANCELLED);
+        orders.save(o);
+        return Map.of("ok", true, "msg", "已取消");
+    }
+}</code></pre>
+
+<h3>3) Controller：入口绑定 + finally 清理</h3>
+<pre><code>@RestController
+@RequestMapping("/order")
+public class OrderAgentController {
+    private final ChatClient chatClient;
+
+    public OrderAgentController(ChatClient.Builder builder,
+                                OrderTools orderTools) {
+        this.chatClient = builder.defaultTools(orderTools).build();
+    }
+
+    @PostMapping("/ask")
+    public AskResp ask(@RequestBody AskReq req,
+                       @RequestHeader("X-User-Id") String uid) {
+        UserContext.set(uid);                       // 入口绑定
+        try {
+            String answer = chatClient.prompt(req.question()).call().content();
+            return new AskResp(true, answer);
+        } finally {
+            UserContext.clear();                     // 必须在 finally 清
+        }
+    }
+}</code></pre>
+<p>注意：生产环境 <code>X-User-Id</code> 不能直接信任前端传来的值，必须由网关/过滤器在验签或解析 JWT 后注入，或直接在 <code>OncePerRequestFilter</code> 里 set 到 ThreadLocal。</p>
+</section>
+
+<section><h2>工具注册：默认工具 vs 按角色动态工具</h2>
+<p>上面示例用 <code>defaultTools(orderTools)</code> 把 <code>OrderTools</code> 的所有方法对所有用户开放。现实业务里你会遇到"客服能看所有订单、用户只能看自己、管理员能退款"这种按角色裁剪工具集的需求。两种选择：</p>
+
+<div class="grid">
+<div class="card"><h3>defaultTools(...) — 默认工具</h3>
+<p><strong>适用：</strong>登录后所有角色都能用的通用工具（如 <code>listMyOrders</code>、<code>getOrder</code>）。ChatClient 构建期绑定，每次调用都带上，性能最好。</p>
+<p><strong>写在：</strong><code>ChatClient.builder.defaultTools(...)</code> 或 <code>build()</code> 之前。</p>
+</div>
+<div class="card"><h3>.tools(...) — 按请求动态工具</h3>
+<p><strong>适用：</strong>按角色/场景动态下发，例如管理员才挂 <code>refundOrder</code>，客服才挂 <code>listAllOrders</code>。在每次 <code>prompt().tools(...).call()</code> 时临时传入。</p>
+<p><strong>写在：</strong><code>chatClient.prompt(q).tools(toolsByRole(uid)).call()</code>。</p>
+</div>
+</div>
+
+<p><strong>推荐实践：</strong>通用工具（用户自助查询）走 <code>defaultTools</code>，高危/特权工具走运行时动态 <code>.tools(...)</code>，并在动态工具内部仍然做 ThreadLocal + 二次角色校验——不要把"这个方法没挂到 tools()"当作安全边界，因为模型工具选择不是 100% 可预测，防御必须分层。</p>
+</section>
+
+<section><h2>关键参数与配置</h2>
+<table>
+<thead><tr><th>配置项 / API</th><th>默认</th><th>何时调</th></tr></thead>
+<tbody>
+<tr><td><code>spring.ai.dashscope.api-key</code></td><td>无</td><td>必须配置，建议走环境变量或配置中心，<strong>不要</strong>硬编码到 git</td></tr>
+<tr><td><code>spring.ai.dashscope.chat.options.model</code></td><td>qwen-plus</td><td>工具调用场景推荐 <code>qwen-max</code> / <code>qwen-plus</code>；长上下文列表查询可试 <code>qwen-long</code></td></tr>
+<tr><td><code>ChatClient.Builder.defaultTools(Object...)</code></td><td>空</td><td>注册所有登录用户通用的工具 Bean</td></tr>
+<tr><td><code>ChatClient.prompt(...).tools(Object...)</code></td><td>空</td><td>单次调用动态追加/覆盖工具，按角色裁剪时使用</td></tr>
+<tr><td><code>@Tool(description=...)</code></td><td>必填</td><td>description 直接决定模型是否选这个工具、参数怎么填，必须写清"谁能查/能做什么/返回什么"</td></tr>
+<tr><td><code>@Tool(returnDirect=true)</code></td><td>false</td><td>工具返回值不经过 LLM 二次润色直接回给用户；结构化数据、敏感错误信息场景可开</td></tr>
+<tr><td>Tool 执行超时</td><td>无（阻塞到返回）</td><td>对订单查询建议包裹一层 <code>@TimeLimiter</code> 或 Resilience4j 超时，防止 DB 慢查询卡住对话</td></tr>
+<tr><td>X-User-Id 头来源</td><td>前端直传（Demo）</td><td>生产必须由网关 / <code>OncePerRequestFilter</code> 从 JWT/会话解析后注入，防止伪造</td></tr>
+</tbody>
+</table>
+</section>
+
+<section><h2>安全性对比：模型传 userId vs ThreadLocal 注入</h2>
+<table>
+<thead><tr><th>维度</th><th>让模型传 <code>userId</code></th><th>ThreadLocal 服务端注入</th></tr></thead>
+<tbody>
+<tr><td>参数来源</td><td>模型从用户 prompt 里猜/编</td><td>Controller 从 JWT/会话解析，模型不可见</td></tr>
+<tr><td>越权风险</td><td>极高——prompt 注入即可换 uid</td><td>低——uid 不经过模型</td></tr>
+<tr><td>IDOR（横向越权）</td><td>易发生，攻击者枚举 orderId 即可</td><td>Tool 内比对 ownerUid，默认拒绝</td></tr>
+<tr><td>审计可追溯</td><td>uid 不可信，审计无意义</td><td>uid 来自认证层，可直接写审计日志</td></tr>
+<tr><td>和现有安全栈集成</td><td>无法对接 Spring Security</td><td>可直接替换为 <code>SecurityContextHolder</code></td></tr>
+<tr><td>模型 token 开销</td><td>多一个参数 + 描述</td><td>0 额外开销</td></tr>
+</tbody>
+</table>
+</section>
+
+<div class="callout warning">
+<p><strong>边界与常见坑（生产踩坑清单）：</strong></p>
+<ol>
+<li><strong>ThreadLocal 忘记 clear() 会串号。</strong> Tomcat/Jetty 用线程池复用线程，如果某次请求异常没走到 <code>finally</code> 里的 <code>clear()</code>，下一个复用该线程的请求会读到上一个用户的 uid，导致<strong>跨用户数据泄露</strong>。必须用 try/finally 包裹，或注册一个 <code>ServletRequestListener.requestDestroyed()</code> 统一兜底清理。WebFlux 场景 ThreadLocal 直接失效（线程切换会丢），必须用 <code>reactor.util.context.Context</code>。</li>
+<li><strong>ThreadLocal 不是唯一防线——工具内部必须做二次校验。</strong> 不要认为"uid 已经从 ThreadLocal 取了就安全"：工具可能被内部其他 Service 直接调用、可能被定时任务触发、可能被测试用例挂起，这时 ThreadLocal 里的值要么是 null 要么是上次残留。<code>OrderRepository</code> 查询层必须强制带 <code>userId</code> 条件（行级权限），最好加 <code>@PreAuthorize</code> 或 MyBatis 拦截器自动注入 uid 过滤，避免某条 SQL 漏写 where 条件。</li>
+<li><strong>写操作绝对不能让模型一句话就执行。</strong> <code>cancelOrder</code> 看起来只是改个状态，但涉及退款、库存回补、履约中断。生产必须加幂等键（同一 orderId 多次 cancel 返回同样结果）、状态机校验、以及 HITL（Human-in-the-loop）确认——例如取消金额 &gt; 500 元或已发货订单，要先把"将取消订单 SO-1001，退款 ¥1280，是否确认？"抛回给用户点按钮，不能模型直接调 Tool 提交。</li>
+<li><strong>订单读库走从库、写操作走主库。</strong> 列表查询和 <code>getOrder</code> 可以容忍秒级延迟，走从库扛流量；<code>cancelOrder</code> 这类写后立即读的操作必须走主库，否则刚 cancel 完下一句模型调 <code>getOrder</code> 查到从库可能还是"待发货"，模型就会胡编"取消失败"。</li>
+<li><strong>@Tool 的 description 别把敏感表名/字段名暴露给模型。</strong> 你在 description 里写 "查询 t_order 表所有字段"，等于把数据库结构告诉 prompt 注入攻击者。描述要站在<strong>业务动作</strong>角度（"列出我的订单"），不要泄露内部实现。</li>
+</ol>
+</div>
+
+<section><h2>主资料</h2>
+<ul>
+<li><a href="https://java2ai.com" target="_blank" rel="noopener">java2ai.com — Spring AI Alibaba 中文官方站</a>：工具调用、ChatClient、Advisor 等核心概念最易读的中文入口。</li>
+<li><a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba</a>：源码与示例工程，<code>spring-ai-alibaba-examples</code> 下有完整 tool-calling 样例。</li>
+<li><a href="https://docs.spring.io/spring-ai/reference/api/tools.html" target="_blank" rel="noopener">Spring AI 官方参考 — Tool Calling</a>：<code>@Tool</code> 注解、<code>ToolCallback</code>、<code>defaultTools</code>/动态 tools 的官方说明。</li>
+<li><a href="https://help.aliyun.com/zh/model-studio/" target="_blank" rel="noopener">阿里云百炼 Model Studio 文档</a>：通义千问系列模型的工具调用能力、限流、错误码；选型 qwen-plus / qwen-max 时必看。</li>
+</ul>
+<p class="small">延伸阅读：ThreadLocal 泄漏问题与 <code>InheritableThreadLocal</code>/<code>TransmittableThreadLocal</code> 在线程池/异步场景的处理；Spring Security 的 <code>SecurityContextHolder</code> 本质就是同样的 ThreadLocal 模式，可以直接替代你自己写的 UserContext。</p>
+</section>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -43,7 +225,18 @@ public Map&lt;String,Object&gt; getOrderById(String orderId) {
 # 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
 </ol></div>
 <h4>⚡ 3 条命令快速验证 11-order-agent</h4>
-<pre><code>curl -X POST http://localhost:8090/order/ask -H 'Content-Type: application/json' -H 'X-User-Id: u001' -d '{"question":"我的订单 SO-1001 到哪了"}'</code></pre>
+<pre><code># 1) 合法查询：u001 查自己的订单 SO-1001
+curl -X POST http://localhost:8090/order/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \
+  -d '{"question":"我的订单 SO-1001 到哪了"}'
+# 2) 越权访问：u001 尝试查别人的订单 O-2001 → 应返回"无权限或订单不存在"
+curl -X POST http://localhost:8090/order/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \
+  -d '{"question":"帮我查一下订单 O-2001 的状态"}'
+# 3) 未登录访问：不带 X-User-Id → 应返回鉴权失败
+curl -X POST http://localhost:8090/order/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"我的订单 SO-1001 到哪了"}'</code></pre>
 </section>
 
 <section><h2>检索练习</h2>

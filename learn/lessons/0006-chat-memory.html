@@ -1,30 +1,155 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>多轮对话 Memory</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多轮对话 Memory</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0006 · Spring AI Alibaba</div>
 <h1>多轮对话 Memory：会话上下文的第一课</h1>
 <p>本课目标：会用 <code>ChatMemory</code> + <code>MessageChatMemoryAdvisor</code> 给 ChatBot 装上记忆，通过 <code>conversationId</code> 隔离用户。</p>
 <p class="small">配套 Demo：<code>demos/07-chat-memory</code>。参考卡：<a href="../reference/0006-chat-memory-quick-reference.html">Memory 快速参考</a>。</p></header>
 
+<section>
+<h2>你今天要获得的一个能力</h2>
+<div class="callout">
+<p><strong>能力目标：</strong>能够在 Spring Boot 里用 <code>ChatMemory</code> + <code>MessageChatMemoryAdvisor</code> 给 ChatClient 装上多轮记忆，并明确 <code>conversationId</code>、窗口大小、存储后端三者在生产环境下的边界。</p>
+</div>
+<p>大模型本身是无状态的——你每一次 <code>call()</code> 它都像第一次见到你。"记忆"不是模型自带的能力，而是应用层在请求前把历史拼进 Prompt、请求后把新对话写回存储。这节课就把这件事的完整链路讲清楚。</p>
+</section>
+
 <section><h2>三个组件</h2>
-<pre><code>ChatMemory memory = new InMemoryChatMemory();
+<p>记忆能力由三件套组成：<strong>ChatMemory</strong>（存储接口）+ <strong>MessageChatMemoryAdvisor</strong>（在 advisor 链里负责读/写）+ <strong>conversationId</strong>（请求级参数，用来区分会话）。</p>
+<pre><code>// ① 存储：Spring AI 1.1+ 推荐 MessageWindowChatMemory（滑窗裁剪）
+ChatMemory memory = MessageWindowChatMemory.builder()
+        .maxMessages(20)           // 保留最近 20 条消息
+        .build();
+
+// ② 把 Advisor 挂到 ChatClient 上（全局一次注册即可）
 ChatClient client = builder.defaultAdvisors(
-    MessageChatMemoryAdvisor.builder(memory).build()
+        MessageChatMemoryAdvisor.builder(memory).build()
 ).build();
 
+// ③ 每次请求必须传入 conversationId 做会话隔离
 client.prompt().user(q).advisors(a -&gt; a
-    .param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, cid)
-    .param(AbstractChatMemoryAdvisor.CHAT_MEMORY_RETRIEVE_SIZE_KEY, 20))
-.call().content();</code></pre></section>
+        .param("chat_memory_conversation_id", cid)
+).call().content();</code></pre>
+<p class="small">旧版 Spring AI 里常写 <code>new InMemoryChatMemory()</code> 以及通过 <code>CHAT_MEMORY_RETRIEVE_SIZE_KEY</code> 控制取回条数；Spring AI 1.1+ 这两件事合并到 <code>MessageWindowChatMemory.maxMessages</code>，advisor param 只需要传 <code>chat_memory_conversation_id</code>。</p></section>
 
-<section><h2>Advisor 干了什么</h2>
-<ol>
-<li>请求前：按 <code>conversationId</code> 从 ChatMemory 读最近 N 条历史消息，拼进 Prompt。</li>
-<li>请求后：把最新一轮 user / assistant 写回 ChatMemory。</li>
-</ol></section>
+<section><h2>ChatMemory 工作原理：让无状态的 LLM 看起来有记忆</h2>
+<p>LLM 本身没有"会话"的概念——每次请求发给模型的，只有这一次 Prompt 里出现过的文本。所以"记住前文"的真实做法，是在调用模型之前，由你自己把该会话的历史消息读出来、拼到本次 Prompt 里；模型返回后，再把这一轮新的 user/assistant 消息写回存储。Spring AI 把这两步封装在 <code>MessageChatMemoryAdvisor</code> 里，挂在 ChatClient 的 advisor 链上，你不用手写拼接逻辑。</p>
+
+<pre><code>用户发新问题
+   │
+   ▼
+┌─────────────────────────────────────────────┐
+│ ChatClient.prompt().user(q).call()          │
+│   │                                         │
+│   ▼ ① 请求前 (before)                       │
+│ MessageChatMemoryAdvisor:                   │
+│   memory.get(conversationId) → 历史消息     │
+│   把历史 + system + 本次 user 组装成 Prompt │
+│   │                                         │
+│   ▼ ②                                       │
+│ DashScope ChatModel → 大模型                │
+│   │                                         │
+│   ▼ ③ 请求后 (after)                        │
+│ MessageChatMemoryAdvisor:                   │
+│   memory.add(conversationId, userMsg)       │
+│   memory.add(conversationId, assistantMsg)  │
+└─────────────────────────────────────────────┘
+   │
+   ▼
+返回 assistant 文本给前端</code></pre>
+
+<p>关键点是 advisor 在请求前后各执行一次：<strong>before</strong> 负责"回忆"（从存储拉历史塞进 Prompt），<strong>after</strong> 负责"记下来"（把新 exchange 写回）。模型全程都不知道自己被这样对待，它每次看到的只是一段更长的 Prompt。</p>
+
+<p>Spring AI 的 advisor 是责任链模式，除了 MemoryAdvisor，你后面还会见到 QuestionAnswerAdvisor（RAG 检索）、ToolCallingAdvisor（工具调用）等。MemoryAdvisor 通常放在链的前面，因为后续 advisor 追加的消息也需要被写入历史。</p>
+</section>
+
+<section><h2>核心 API 与完整代码</h2>
+<p>下面是 <code>demos/07-chat-memory</code> 真实可运行的最小配置（Spring AI 1.1+，使用 <code>MessageWindowChatMemory</code>）：</p>
+
+<pre><code>@Configuration
+public class ChatMemoryConfig {
+
+    // ① 定义 ChatMemory：滑动窗口，默认保留最近 20 条消息
+    @Bean
+    public ChatMemory chatMemory() {
+        return MessageWindowChatMemory.builder()
+                // .maxMessages(20)     // 窗口大小，默认 20
+                // .chatMemoryRepository(...)  // 生产换成 Redis/JDBC 实现
+                .build();
+    }
+
+    // ② 把 MessageChatMemoryAdvisor 注册为默认 advisor
+    @Bean
+    public ChatClient memoryChatClient(ChatClient.Builder builder,
+                                       ChatMemory chatMemory) {
+        return builder
+                .defaultSystem("你是一名企业级 Java 后端 + Spring AI Alibaba 学习助手……")
+                .defaultAdvisors(
+                        MessageChatMemoryAdvisor.builder(chatMemory).build()
+                )
+                .build();
+    }
+}</code></pre>
+
+<p>Controller 里每次请求必须传入 <code>chat_memory_conversation_id</code>，否则所有请求会进入同一个 <code>default</code> 会话：</p>
+
+<pre><code>@PostMapping("/chat/ask")
+public Object ask(@RequestBody AskRequest req) {
+    String cid = req.conversationId();   // 生产必须从登录态派生，不能信前端
+    String answer = chatClient.prompt()
+            .user(req.question())
+            .advisors(a -&gt; a.param("chat_memory_conversation_id", cid))
+            .call()
+            .content();
+    return Map.of("success", true, "answer", answer, "conversationId", cid);
+}</code></pre>
+
+<p>常量 key <code>"chat_memory_conversation_id"</code> 对应 <code>AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY</code>；旧版本还需要传 <code>CHAT_MEMORY_RETRIEVE_SIZE_KEY</code>，Spring AI 1.1+ 窗口大小由 <code>MessageWindowChatMemory.maxMessages</code> 统一控制，不再走 advisor param。</p>
+</section>
+
+<section><h2>ChatMemory 实现对比</h2>
+<p>Spring AI 内置了几种 ChatMemory 实现，选择哪一种决定了"记忆"存在哪、保留多久、能否跨实例共享。</p>
+
+<div class="grid">
+<div class="card"><h3>InMemoryChatMemoryRepository / InMemoryChatMemory</h3>
+<p>最朴素实现：一个 <code>ConcurrentHashMap&lt;conversationId, List&lt;Message&gt;&gt;</code>。重启即丢失，不支持多实例共享。仅适用于本地 Demo、单用户测试。</p></div>
+<div class="card"><h3>MessageWindowChatMemory（推荐默认）</h3>
+<p>基于任意 <code>ChatMemoryRepository</code>（默认 InMemory），但在写入时自动裁剪到最近 K 条消息。解决"上下文无限增长"的问题。Demo 和大多数单实例场景够用。</p></div>
+<div class="card"><h3>JdbcChatMemoryRepository / RedisChatMemoryRepository（示意）</h3>
+<p>Spring AI 扩展包提供的持久化后端。重启不丢、可多实例共享，是生产环境的首选。需要额外引入对应 starter 并配置表结构/Redis 连接。</p></div>
+</div>
+</section>
+
+<section><h2>关键参数与配置</h2>
+<table>
+<thead><tr><th>参数 / 方法</th><th>默认值</th><th>何时调整</th></tr></thead>
+<tbody>
+<tr><td><code>MessageWindowChatMemory.maxMessages</code></td><td>20</td><td>业务需要长上下文时调大（如客服排查多轮问题），但注意 token 成本与延迟；短问答场景可降到 10。</td></tr>
+<tr><td><code>chat_memory_conversation_id</code></td><td><code>"default"</code></td><td>每次请求都要传。值必须由服务端从登录态派生（如 userId + sessionId），绝不能信任前端自报。</td></tr>
+<tr><td><code>defaultAdvisors(MessageChatMemoryAdvisor...)</code></td><td>无</td><td>在 ChatClient 构造时统一注册，业务代码不必每次 <code>.advisors(...)</code> 重复加；但 conversationId 仍需每次请求传。</td></tr>
+<tr><td><code>ChatMemory.get(cid)</code></td><td>—</td><td>用于调试/展示历史；Spring AI 1.1+ 只接受 cid，条数由窗口控制。</td></tr>
+<tr><td><code>ChatMemory.clear(cid)</code></td><td>—</td><td>用户主动"清空记忆"、会话结束、登出时调用。</td></tr>
+</tbody></table>
+
+<p class="small">窗口大小 K 的 trade-off：K 越大，模型越能回忆前文，但每次请求携带的历史消息越多，token 消耗与延迟线性上升；K 过小则模型会在 5~10 轮之后"忘掉"你一开始说过的名字、目标。企业落地通常取 10~30，并结合摘要（summarization）或 RAG 处理更长的会话。</p>
+</section>
 
 <section><h2>会话隔离</h2>
 <div class="callout warning"><p><strong>不传 conversationId 就默认合到 default 会话，用户之间会串数据。</strong> 生产必须由服务端根据用户 + 会话槽生成。</p></div></section>
+
+<section><h2>边界与常见坑</h2>
+<div class="callout warning">
+<ol>
+<li><strong>用 InMemory 上生产：</strong><code>InMemoryChatMemory</code>/默认的 <code>MessageWindowChatMemory</code> 都是进程内存储，应用重启记忆全丢，多实例部署下同一个用户的请求打到不同实例会"失忆"或"串记忆"。生产必须换成 JDBC 或 Redis 后端。</li>
+<li><strong>conversationId 信任前端：</strong>如果 Controller 直接拿请求里的 <code>conversationId</code> 去查历史，恶意用户可以遍历别人的 id 偷看到对话内容。正确做法是从登录态（如 JWT/Session）解析出 userId，再结合前端传的会话槽号组合成服务端可控的 cid。</li>
+<li><strong>不限制记忆长度：</strong>没有窗口或不做摘要，历史会随轮次线性增长，最终触发模型上下文长度上限或产生巨额 token 费用。务必设置 <code>maxMessages</code>，长会话场景叠加摘要记忆（SummaryChatMemory）。</li>
+<li><strong>敏感信息长期留存：</strong>ChatMemory 会把用户输入原样存下，如果里面包含身份证号、手机号、病历等 PII，就必须评估 TTL、加密与合规（如 GDPR/个保法）。对敏感字段在写入前做脱敏，或在会话结束后立即 <code>clear</code>。</li>
+</ol>
+</div>
+</section>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -55,18 +180,39 @@ curl -X POST http://localhost:8086/chat/ask -H 'Content-Type: application/json' 
 curl "http://localhost:8086/chat/history?conversationId=q1"</code></pre>
 </section>
 
-<section><h2>检索练习</h2>
-<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。ID 用来把消息按会话分箱。">
+<section>
+<h2>检索练习：不要看上文，先回答</h2>
+
+<div class="quiz-card" data-quiz data-answer="B" data-correct="正确。conversationId 是 ChatMemory 里用来把消息按会话分箱的 key。" data-wrong="再想想：它既不能让模型变聪明，也不会加速检索。">
 <p><strong>Q1：</strong>conversationId 的作用是？</p>
-<div class="quiz-options"><button data-option="A">让模型更聪明</button><button data-option="B">会话隔离</button><button data-option="C">加速检索</button></div><p class="quiz-feedback small"></p></div>
+<div class="quiz-options"><button data-option="A">让模型更聪明</button><button data-option="B">会话隔离</button><button data-option="C">加速检索</button></div><p class="quiz-feedback small">选择一个答案。</p></div>
 
-<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。请求前后各做一次。">
+<div class="quiz-card" data-quiz data-answer="C" data-correct="正确。before 负责把历史拼进 Prompt，after 负责把新对话写回 Memory。" data-wrong="再想想：回忆和存档是两步，少了哪一步都会出问题。">
 <p><strong>Q2：</strong>MessageChatMemoryAdvisor 在流程中的位置？</p>
-<div class="quiz-options"><button data-option="A">只在请求前</button><button data-option="B">只在请求后</button><button data-option="C">请求前后各一次</button></div><p class="quiz-feedback small"></p></div>
+<div class="quiz-options"><button data-option="A">只在请求前</button><button data-option="B">只在请求后</button><button data-option="C">请求前后各一次</button></div><p class="quiz-feedback small">选择一个答案。</p></div>
 
-<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。生产必须换 Redis / DB 版本。">
-<p><strong>Q3：</strong>InMemoryChatMemory 的局限？</p>
-<div class="quiz-options"><button data-option="A">进程内 + 重启丢</button><button data-option="B">不支持多会话</button><button data-option="C">性能差</button></div><p class="quiz-feedback small"></p></div>
+<div class="quiz-card" data-quiz data-answer="A" data-correct="正确。InMemory 是进程内存储，重启即丢，也无法在多实例间共享。" data-wrong="再想想：它支持多会话（靠 conversationId 分箱），性能也不差，问题在持久化和分布式。">
+<p><strong>Q3：</strong>InMemoryChatMemory 在生产环境的首要局限是？</p>
+<div class="quiz-options"><button data-option="A">进程内存储，重启丢失，多实例无法共享</button><button data-option="B">不支持多会话</button><button data-option="C">性能差、QPS 上不去</button></div><p class="quiz-feedback small">选择一个答案。</p></div>
 </section>
-<section><h2>课后问答</h2><ul><li>"上下文会不会无限增长？"</li><li>"多实例部署怎么共享记忆？"</li></ul></section>
+
+<section>
+<h2>主资料</h2>
+<ul>
+<li><a href="https://java2ai.com/docs/1.0.0.2/tutorials/chat-memory/">Spring AI Alibaba · Chat Memory 教程</a> —— 对齐本课程版本的官方中文教程，包含 JDBC/Redis 后端示例。</li>
+<li><a href="https://docs.spring.io/spring-ai/reference/api/chat-memory.html">Spring AI 官方参考 · Chat Memory</a> —— Advisor 链、<code>MessageWindowChatMemory</code>、<code>ChatMemoryRepository</code> SPI 的权威说明。</li>
+<li><a href="https://github.com/alibaba/spring-ai-alibaba/tree/main/spring-ai-alibaba-starters">spring-ai-alibaba-starters on GitHub</a> —— Starter 源码位置，可以直接查看 advisor 与自动装配实现。</li>
+<li><a href="https://help.aliyun.com/zh/model-studio/">阿里云百炼 Model Studio 文档</a> —— 底层 DashScope 模型的上下文长度、计费、限流等参数来源。</li>
+</ul>
+</section>
+
+<section>
+<h2>课后问答</h2>
+<p>你可以直接问我：</p>
+<ul>
+<li>"上下文会不会无限增长？窗口大小怎么选？"</li>
+<li>"多实例部署怎么共享记忆？JDBC 和 Redis 怎么接？"</li>
+<li>"用户的敏感信息进了 Memory，怎么做合规与 TTL？"</li>
+</ul>
+</section>
 </main></body></html>

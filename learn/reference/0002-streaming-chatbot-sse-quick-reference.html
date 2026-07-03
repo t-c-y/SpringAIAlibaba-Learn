@@ -1,90 +1,65 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
+<meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>流式 ChatBot 与 SSE 快速参考</title>
+  <title>流式 SSE 快速参考</title>
   <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
 </head>
 <body>
 <main>
   <header>
     <div class="eyebrow">Reference · Spring AI Alibaba</div>
-    <h1>流式 ChatBot 与 SSE 快速参考</h1>
-    <p class="small">用于复习阶段三：同步调用、流式调用、SSE 接口和 curl 测试方式。</p>
+    <h1>流式 SSE 快速参考</h1>
+    <p class="small">对应第 0002 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
   </header>
 
   <section>
-    <h2>同步调用</h2>
-    <pre><code>String answer = chatClient.prompt()
-        .user("请解释 Spring AI Alibaba")
-        .call()
-        .content();</code></pre>
-    <p>同步调用会等待模型完整生成后再返回，适合短回答和后台任务。</p>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>Accept: text/event-stream</code></td><td>SSE 响应头，curl 用 -H 设置</td></tr>
+      <tr><td><code>curl -N</code></td><td>关闭 curl 缓冲，立即看到每一帧</td></tr>
+      <tr><td><code>.stream().content()</code></td><td>返回 Flux<String>，每 next 是一段 token</td></tr>
+      <tr><td><code>produces = MediaType.TEXT_EVENT_STREAM_VALUE</code></td><td>@GetMapping 注解声明 SSE</td></tr>
+      <tr><td><code>EventSource (浏览器)</code></td><td>new EventSource(url) 监听 message 事件</td></tr>
+      <tr><td><code>data: ... \n\n</code></td><td>SSE 帧格式；注释行以 : 开头；[DONE] 约定结束</td></tr>
+      </tbody>
+    </table>
   </section>
 
   <section>
-    <h2>流式调用</h2>
-    <pre><code>Flux&lt;String&gt; answerStream = chatClient.prompt()
-        .user("请解释 SSE 为什么适合 ChatBot")
-        .stream()
-        .content();</code></pre>
-    <p>流式调用返回 <code>Flux&lt;String&gt;</code>，模型生成一部分，服务端就可以向客户端返回一部分。</p>
-  </section>
-
-  <section>
-    <h2>SSE Controller 最小形态</h2>
-    <pre><code>@PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-public Flux&lt;String&gt; stream(@RequestBody AskRequest request) {
-    return chatClient.prompt()
-            .user(request.question())
-            .stream()
-            .content();
+    <h2>典型代码模板</h2>
+    <pre><code>@GetMapping(value="/chat/stream", produces=TEXT_EVENT_STREAM_VALUE)
+public Flux<String> stream(@RequestBody AskRequest req) {
+  return chatClient.prompt().user(req.question()).stream().content();
 }</code></pre>
-    <div class="callout">
-      <p><strong>关键点：</strong><code>MediaType.TEXT_EVENT_STREAM_VALUE</code> 告诉客户端，这不是普通 JSON，而是服务端持续发送的事件流。</p>
-    </div>
   </section>
 
   <section>
-    <h2>curl 测试</h2>
-    <pre><code>curl -N -X POST 'http://localhost:8082/chat/stream' \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: text/event-stream' \
-  -d '{"question":"请用三点解释 SSE 为什么适合 ChatBot"}'</code></pre>
-    <p><code>-N</code> 用于关闭 curl 缓冲，否则终端可能看起来不像逐步输出。</p>
-  </section>
-
-  <section>
-    <h2>同步 vs 流式</h2>
-    <div class="grid">
-      <div class="card">
-        <h3>同步</h3>
-        <ul>
-          <li><code>.call().content()</code></li>
-          <li>一次性返回完整结果</li>
-          <li>返回普通 JSON 更常见</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3>流式</h3>
-        <ul>
-          <li><code>.stream().content()</code></li>
-          <li>边生成边返回文本片段</li>
-          <li>返回 <code>text/event-stream</code></li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <h2>常见问题</h2>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
     <ul>
-      <li>没有流式效果：检查是否使用 <code>curl -N</code>。</li>
-      <li>接口超时：调大 <code>DASHSCOPE_READ_TIMEOUT</code> 并确认网络能访问 DashScope。</li>
-      <li>返回不是 JSON：这是正常的，SSE 是文本事件流。</li>
-      <li>本阶段没有多轮上下文：因为还没有引入 Memory。</li>
+      <li>Nginx 反向代理默认会缓冲 SSE，必须加 proxy_buffering off</li>
+      <li>移动端网络切换 SSE 不会自动恢复，要业务层做重连</li>
+      <li>Flux 内抛异常会直接关闭流，用 onErrorResume 降级为错误提示</li>
+      <li>前端 EventSource 只支持 GET，POST 流需用 fetch + ReadableStream</li>
+      <li>前端要做打字机节流（逐 token 追加太快会抖动）</li>
     </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>知道 -N 和 Accept 头的作用吗？</li>
+      <li>能写一个返回 Flux<String> 的 SSE 接口吗？</li>
+      <li>知道 Nginx 反代 SSE 要关缓冲吗？</li>
+      <li>浏览器端会用 EventSource 消费 SSE 吗？</li>
+    </ol>
   </section>
 </main>
 </body>

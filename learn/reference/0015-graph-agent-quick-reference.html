@@ -1,26 +1,65 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Graph 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>Graph 编排快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graph 状态机快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>Graph 状态机快速参考</h1>
+    <p class="small">对应第 0015 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>四要素</h2>
-<ol>
-<li>State：显式对象，节点读写。</li>
-<li>Node：处理一件事，返回下一个节点名。</li>
-<li>Transition：由代码决定，可用规则 + LLM 分类混合。</li>
-<li>Terminator：END + 步数守卫。</li>
-</ol></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>Node</code></td><td>一个节点做一件事；输入输出是结构化 state，不是自然语言</td></tr>
+      <tr><td><code>Edge</code></td><td>决定从当前节点跳转到哪个下一节点</td></tr>
+      <tr><td><code>CLASSIFY 根节点</code></td><td>唯一用 LLM 的节点，输出枚举意图，temperature=0+few-shot</td></tr>
+      <tr><td><code>END 节点</code></td><td>结束图执行，输出 answer</td></tr>
+      <tr><td><code>maxSteps</code></td><td>防死循环上限（推荐 ≤16）</td></tr>
+      <tr><td><code>state Map</code></td><td>跨节点共享的上下文（intent/uid/orders/answer 等）</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>何时用 Graph</h2>
-<ul>
-<li>关键动作需要人工审批。</li>
-<li>回放和 A/B 测试是刚需。</li>
-<li>意图分支多、误路由成本高。</li>
-</ul></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>undefined</code></pre>
+  </section>
 
-<section><h2>何时不用</h2>
-<ul>
-<li>简单单轮问答、纯知识检索。</li>
-<li>只需要 Memory + RAG 就能满足业务。</li>
-</ul></section>
-</main></body></html>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>业务节点（查订单/查政策）不要调 LLM，直接查数据/规则</li>
+      <li>分类节点 Prompt 要列全所有意图 enum + few-shot 示例，否则容易 FALLBACK</li>
+      <li>maxSteps 要限制并在超限时打错误日志</li>
+      <li>状态 Map 不要无限膨胀（长对话要做摘要或清理）</li>
+      <li>每个分支必须有 END 路径，不能形成环</li>
+      <li>资金/退款类节点必须 HITL，不能直接执行</li>
+      <li>每个节点要可单独单元测试（输入 state 断言新 state）</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会画一张图表示节点和边吗？</li>
+      <li>知道 CLASSIFY 节点为什么要用低 temperature？</li>
+      <li>会设置 maxSteps 防死循环吗？</li>
+      <li>为什么业务节点不调 LLM？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

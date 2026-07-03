@@ -1,10 +1,52 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PDF 知识库 RAG</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF 知识库 RAG</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0012 · Spring AI Alibaba</div>
 <h1>PDF 知识库：按页引用与上传灌库</h1>
 <p>本课目标：会用 <code>PagePdfDocumentReader</code> 处理 PDF，让回答能标注 <code>[page N]</code> 引用。</p>
 <p class="small">配套 Demo：<code>demos/13-pdf-rag</code>。参考卡：<a href="../reference/0012-pdf-rag-quick-reference.html">PDF RAG 快速参考</a>。</p></header>
+
+<div class="callout">
+<p><strong>你今天要获得的一个能力：</strong>能把任意业务 PDF（合同、手册、规范、研报）灌进向量库，让模型回答时强制以 <code>[page N]</code> 标注出处页码，做到回答可溯源、可审计，而不是"凭空编一段像真的一样的答案"。</p>
+</div>
+
+<section><h2>PDF RAG 工作原理</h2>
+<p>和 Markdown/纯文本 RAG 的唯一本质差别在 <strong>DocumentReader</strong> 这一步。PDF 是二进制版式文件，自带页、字体、坐标、图片、表格，必须由专门的 Reader 负责"抽文本 + 保留页码"，后面的 Splitter、Embedding、VectorStore、Retriever 链路和 Markdown RAG 完全一致。</p>
+<pre><code>                ┌──────────────────────────────────────────────────────────┐
+                │                      PDF 文件（二进制）                  │
+                └──────────────┬───────────────────────────────────────────┘
+                               │  PagePdfDocumentReader
+                               ▼
+                ┌──────────────────────────────────────────────────────────┐
+                │  List&lt;Document&gt; 一页一个 Document                         │
+                │  metadata: { page_number=1, file_name="x.pdf" }          │
+                │  metadata: { page_number=2, file_name="x.pdf" }          │
+                └──────────────┬───────────────────────────────────────────┘
+                               │  TokenTextSplitter(400, 200)
+                               ▼
+                ┌──────────────────────────────────────────────────────────┐
+                │  子 chunks（继承 page_number metadata）                  │
+                └──────────────┬───────────────────────────────────────────┘
+                               │  vectorStore.add(...) → Embedding
+                               ▼
+                ┌──────────────────────────────────────────────────────────┐
+                │  VectorStore（向量 + 原文 + metadata）                    │
+                └──────────────┬───────────────────────────────────────────┘
+                               │  question → similarity search topK
+                               ▼
+                ┌──────────────────────────────────────────────────────────┐
+                │  召回 topK chunks（带 page_number）→ 拼进 Prompt          │
+                │  System: "回答必须以 [page N] 标注引用页码"                │
+                               ▼
+                         LLM 生成带引用的回答
+</code></pre>
+<p><strong>第一步 Reader：</strong>Spring AI 提供 <code>PagePdfDocumentReader</code>（按页切，每个 Document 对应一页，metadata 带 <code>page_number</code>，最适合做"按页引用"）和 <code>ParagraphPdfDocumentReader</code>（按视觉段落自动聚合，段落可能跨页，会丢页码精度）。底层用 Apache PDFBox 解析 PDF 算子流抽文字；扫描版 PDF（整页是一张图）抽不到任何文字，必须先 OCR。</p>
+<p><strong>第二步 Splitter：</strong>单页 PDF 往往超 Embedding 上下文，需要再次切。常用 <code>TokenTextSplitter(400, 200)</code>——每个 chunk 400 token，相邻 chunk 重叠 200 token 以避免句子/表格被硬切断；切出来的子 chunk 会<strong>继承原 Document 的 metadata</strong>，所以 <code>page_number</code> 不会丢。</p>
+<p><strong>第三步 Retrieval + Prompt 约束：</strong>召回的 chunks 把 <code>page_number</code> 一起送进 Prompt；System Prompt 里必须写死"回答中凡引用资料的部分都要以 <code>[page N]</code> 标注页码，N 从 1 开始"——这是让模型不编造出处的关键。没有这句硬约束，模型大概率会省略引用或瞎编页码。</p>
+</section>
 
 <section><h2>关键差异</h2>
 <ul>
@@ -13,14 +55,136 @@
 <li>扫描版 PDF 需要先 OCR，本课不覆盖。</li>
 </ul></section>
 
-<section><h2>核心代码</h2>
-<pre><code>PagePdfDocumentReader reader = new PagePdfDocumentReader(pdf,
-    PdfDocumentReaderConfig.builder()
-        .withPagesPerDocument(1)
-        .build());
-List&lt;Document&gt; docs = reader.get();
-docs.forEach(d -> d.getMetadata().put("file_name", fileName));
-vectorStore.add(new TokenTextSplitter(400, 200, ...).apply(docs));</code></pre></section>
+<section><h2>Reader 选型对比</h2>
+<div class="grid">
+<div class="card"><h3>PagePdfDocumentReader</h3><p>一页一个 Document，metadata 必带 <code>page_number</code>。<strong>本课选用</strong>，因为要做 <code>[page N]</code> 引用。</p></div>
+<div class="card"><h3>ParagraphPdfDocumentReader</h3><p>按视觉段落聚合，段落可能跨页，页码不精确。适合"不需要引用页码、只做语义召回"的场景。</p></div>
+<div class="card"><h3>自写 Apache PDFBox</h3><p>自己 new <code>PDDocument</code> + <code>PDFTextStripper</code> 抽文本，灵活但要自己处理坐标、表格、CJK 字体，成本高。</p></div>
+</div>
+</section>
+
+<section><h2>核心 API / 完整 ingest 代码</h2>
+<p>PDF RAG 和 Markdown RAG 的代码骨架完全一致，<strong>唯一区别就是 Reader 换成 PagePdfDocumentReader</strong>。下面是 <code>/pdf/upload</code> 接口的典型实现：</p>
+<pre><code>@RestController
+@RequestMapping("/pdf")
+public class PdfRagController {
+
+    private final VectorStore vectorStore;
+    private final EmbeddingModel embeddingModel;
+    private final ChatClient chatClient;
+
+    // 强制引用页码的 System Prompt——这是避免模型瞎编出处的关键
+    private static final String SYSTEM_PROMPT = """
+        你是企业文档助手，必须严格基于下方"参考资料"回答。
+        规则：
+        1. 答案只能来自参考资料，资料里没有的就说"文档中未提及"；
+        2. 每个事实性陈述后必须用 [page N] 标注引用页码，N 从 1 开始；
+        3. 如果一句话同时来自多页，写成 [page 3,5]；
+        4. 禁止编造页码，禁止引用参考资料里没有的内容。
+        参考资料：
+        {documents}
+        """;
+
+    // 文件上传接口：MultipartFile → 临时文件 → Reader → Splitter → VectorStore
+    @PostMapping("/upload")
+    public Map&lt;?, ?&gt; upload(@RequestParam("file") MultipartFile file) throws Exception {
+        // 1. 类型/大小校验（必须做，见边界坑）
+        String original = file.getOriginalFilename();
+        if (original == null || !original.toLowerCase().endsWith(".pdf")) {
+            return Map.of("success", false, "error", "仅支持 PDF");
+        }
+        if (file.getSize() > 20 * 1024 * 1024) {
+            return Map.of("success", false, "error", "PDF 不能超过 20MB");
+        }
+
+        // 2. MultipartFile 转临时文件（PagePdfDocumentReader 接受 Resource）
+        Path tmp = Files.createTempFile("upload-", ".pdf");
+        file.transferTo(tmp);
+
+        // 3. 按页读 PDF：withPagesPerDocument(1) → 一页一个 Document
+        PagePdfDocumentReader reader = new PagePdfDocumentReader(
+                new FileSystemResource(tmp),
+                PdfDocumentReaderConfig.builder()
+                        .withPagesPerDocument(1)
+                        .build());
+        List&lt;Document&gt; docs = reader.get();
+
+        // 4. 补业务 metadata（后续按文件名做隔离/删除/版本管理会用到）
+        docs.forEach(d -> {
+            d.getMetadata().put("file_name", original);
+            d.getMetadata().put("upload_at", Instant.now().toString());
+        });
+
+        // 5. TokenTextSplitter 按 400 token 切、重叠 200——子 chunk 自动继承 page_number
+        TokenTextSplitter splitter = new TokenTextSplitter(400, 200, 5, 10000, true);
+        List&lt;Document&gt; chunks = splitter.apply(docs);
+
+        // 6. 灌库（内部会调用 EmbeddingModel 向量化）
+        vectorStore.add(chunks);
+
+        Files.deleteIfExists(tmp);
+        return Map.of("success", true, "fileName", original,
+                      "pages", docs.size(), "chunks", chunks.size());
+    }
+
+    @PostMapping("/ask")
+    public Map&lt;?, ?&gt; ask(@RequestBody Map&lt;String,String&gt; req) {
+        String question = req.get("question");
+        // 7. 检索时按 page_number 聚合也可以，这里走标准 similarity search
+        List&lt;Document&gt; hits = vectorStore.similaritySearch(
+                SearchRequest.query(question).withTopK(5));
+        String docs = hits.stream()
+                .map(d -> String.format("[page %s] %s",
+                        d.getMetadata().get("page_number"),
+                        d.getText()))
+                .collect(Collectors.joining("\n\n"));
+
+        String answer = chatClient.prompt()
+                .system(s -> s.text(SYSTEM_PROMPT).param("documents", docs))
+                .user(question)
+                .call().content();
+        return Map.of("success", true, "answer", answer);
+    }
+}</code></pre>
+<p class="small">关键点：<code>TokenTextSplitter</code> 切出来的子 chunk 会<strong>原样继承</strong>父 Document 的 metadata，所以即使一页被切成 3 片，每片都带正确的 <code>page_number</code>——这是页码引用能成立的基础。</p>
+</section>
+
+<section><h2>关键参数与配置</h2>
+<table>
+<thead><tr><th>参数 / 配置项</th><th>默认</th><th>何时调 / 说明</th></tr></thead>
+<tbody>
+<tr><td><code>PdfDocumentReaderConfig.withPagesPerDocument(n)</code></td><td>1</td><td>设为 1 才能一页一个 Document、引用页码精确；手册/合同建议保持 1，长篇论文可设 2-3 减少 chunk 数。</td></tr>
+<tr><td><code>TokenTextSplitter(defaultChunkSize, ...)</code></td><td>800</td><td>PDF 场景建议 400——一页 A4 中文约 500-800 字，400 token 能保证单 chunk 落在 Embedding 最佳区间，且单页信息可被多次召回。</td></tr>
+<tr><td><code>TokenTextSplitter(..., minChunkSizeChars, maxNumChunks, keepSeparator)</code></td><td>350, 10000, true</td><td><code>keepSeparator=true</code> 保留换行/句号，避免把句子切残。</td></tr>
+<tr><td><code>SearchRequest.withTopK(k)</code></td><td>4</td><td>PDF 推荐 5-8——单页切多片后 topK=4 容易只命中同一页的相邻片，拉高 k 增加页码覆盖面。</td></tr>
+<tr><td><code>spring.ai.vectorstore.simple.*</code>（SimpleVectorStore）</td><td>内存</td><td><strong>重启就丢</strong>，仅开发用。生产必须切 Redis/Milvus/OpenSearch/PGVector 等持久化实现。</td></tr>
+<tr><td>上传文件大小限制（<code>spring.servlet.multipart.max-file-size</code>）</td><td>1MB</td><td>PDF 场景至少调到 20-50MB，并在 Controller 再做一次业务校验。</td></tr>
+</tbody>
+</table>
+</section>
+
+<div class="callout warning">
+<p><strong>边界与常见坑（企业踩过的）：</strong></p>
+<ol>
+<li><strong>扫描版 PDF 抽不到文字。</strong>PagePdfDocumentReader 底层是 PDFBox 抽文字算子流，扫描件整页是张图，返回的 Document text 会是空或乱码。必须先 OCR：可用 PaddleOCR/TrOCR/Azure Document Intelligence/阿里云文档智能，把 OCR 结果拼装成"伪页文本"再交给 Reader。不要等用户投诉"为什么上传完问什么都答不出"才排查。</li>
+<li><strong>表格跨页会被切断 + 抽不出结构。</strong>PDFBox 按文本坐标抽，跨页表格会被撕成两半，且行列对齐信息丢失。对财务/报表类 PDF，需要用 Camelot/Tabula（基于规则）或 LayoutLM/Azure Doc Intelligence（基于模型）先做表格结构化，再决定如何入向量库。</li>
+<li><strong>加密 PDF 直接报错。</strong>PDFBox 对加密文档会抛 <code>InvalidPasswordException</code>。在 Controller 入口要 catch 住，返回明确提示"该 PDF 已加密，请先解密再上传"；已知密码的场景可用 <code>document.decrypt(password)</code> 后再读。</li>
+<li><strong><code>[page N]</code> 页码从 1 开始，不是 0。</strong>Spring AI 的 <code>page_number</code> 是从 1 开始写的（对应用户看到的 PDF 页码），System Prompt 必须写"N 从 1 开始"，否则模型有时会自己减 1 导致页码错位。</li>
+<li><strong>SimpleVectorStore 重启即失忆。</strong>它是纯内存实现，服务一重启用户上传过的 PDF 就全没了，上传接口会"看起来正常"但回答全是"文档未提及"。生产必须接入持久化 VectorStore（Redis/Milvus/PGVector/OpenSearch），不要把 SimpleVectorStore 上预发/生产。</li>
+<li><strong>resources 下的 sample.pdf 不存在会启动失败。</strong>如果写了 <code>new ClassPathResource("sample.pdf")</code> 做启动时自动灌库，一定要确保 resources 目录真的放了这个文件，否则启动直接抛 <code>FileNotFoundException</code>；建议用 <code>@ConditionalOnResource</code> 或 <code>resource.exists()</code> 判断，缺文件就跳过灌库而不是挂掉。</li>
+<li><strong>上传接口必须做大小 + 类型校验。</strong>不能只靠前端，Controller 必须二次校验扩展名/Magic Number（PDF 头是 <code>%PDF</code>）和大小，否则有人上传 2GB 伪 PDF 会直接把内存/磁盘打爆。</li>
+</ol>
+</div>
+
+<section><h2>主资料</h2>
+<ul>
+<li>Spring AI 官方文档 · PDF Document Reader：<a href="https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html#_pdf" target="_blank" rel="noopener">docs.spring.io/spring-ai/reference/api/etl-pipeline.html#_pdf</a></li>
+<li>Spring AI Alibaba GitHub 仓库（示例与版本矩阵）：<a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba</a></li>
+<li>Apache PDFBox 官方文档（底层 PDF 解析引擎）：<a href="https://pdfbox.apache.org/2.0/" target="_blank" rel="noopener">pdfbox.apache.org</a></li>
+<li>阿里云百炼 / DashScope 文档理解（OCR 与版式分析，处理扫描件）：<a href="https://help.aliyun.com/zh/model-studio/" target="_blank" rel="noopener">help.aliyun.com/zh/model-studio/</a></li>
+<li>Java2AI Spring AI Alibaba 中文教程：<a href="https://java2ai.com" target="_blank" rel="noopener">java2ai.com</a></li>
+</ul>
+</section>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -49,9 +213,16 @@ vectorStore.add(new TokenTextSplitter(400, 200, ...).apply(docs));</code></pre><
 # 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
 </ol></div>
 <h4>⚡ 3 条命令快速验证 13-pdf-rag</h4>
-<pre><code># 先准备一个 PDF，然后上传
+<pre><code># 1) 上传 PDF 并向量化（先准备任意一个 PDF 文件路径）
 curl -X POST http://localhost:8092/pdf/upload -F 'file=@/absolute/path/to/your.pdf'
-curl -X POST http://localhost:8092/pdf/ask -H 'Content-Type: application/json' -d '{"question":"这篇文档讲了什么"}'</code></pre>
+# 2) 仅检索相关页（返回 page/text/source，便于调 chunk/topK/similarityThreshold）
+curl -X POST http://localhost:8092/pdf/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"这篇文档讲了什么"}'
+# 3) PDF RAG 问答：模型在回答里标注 [page N] 引用
+curl -X POST http://localhost:8092/pdf/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"这篇文档的核心结论是什么？请标注页码"}'</code></pre>
 </section>
 
 <section><h2>检索练习</h2>
@@ -68,5 +239,9 @@ curl -X POST http://localhost:8092/pdf/ask -H 'Content-Type: application/json' -
 <div class="quiz-options"><button data-option="A">切片 token 上限</button><button data-option="B">每个 Document 包含多少页</button><button data-option="C">相似度阈值</button></div><p class="quiz-feedback small"></p></div>
 </section>
 
-<section><h2>课后问答</h2><ul><li>"能不能按章节切分？"</li><li>"如何做同 PDF 的版本管理？"</li></ul></section>
+<section><h2>课后问答</h2><ul>
+<li>"能不能按章节切分？" —— 可以，但不是开箱即用。需要先用 PDFBox 解析书签（catalog.getDocumentCatalog().getDocumentOutline()）或基于字号/正则识别章节标题，再按章节边界合并 chunk；或先用一个 LLM 调用从目录页提取章节→页码映射，再按页码区间二次聚合。</li>
+<li>"如何做同 PDF 的版本管理？" —— 推荐在 metadata 里加 <code>doc_id</code>（文件内容 hash）+ <code>version</code>；上传新版本时先按旧 <code>doc_id</code> 调 <code>vectorStore.delete(FilterExpression)</code> 删除旧 chunks，再灌新的。SimpleVectorStore 不支持按 filter delete，生产级 VectorStore 才支持。</li>
+<li>"扫描版合同一定要 OCR，有没有轻量方案？" —— 阿里云文档智能（DocumentMind）/ 腾讯云 OCR 都是 API 接入，不用自己部署模型；本地可用 PaddleOCR（中文效果最好）跑批。OCR 完后把每一页识别出的文字封装成带 <code>page_number</code> 的 Document，下游链路完全复用即可。</li>
+</ul></section>
 </main></body></html>

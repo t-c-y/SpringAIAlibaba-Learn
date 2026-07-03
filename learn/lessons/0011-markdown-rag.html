@@ -1,21 +1,195 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Markdown 知识库 RAG</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markdown 知识库 RAG</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0011 · Spring AI Alibaba</div>
 <h1>Markdown 知识库 RAG：Ingest → Retrieve → Generate</h1>
 <p>本课目标：跑通完整 RAG 链路，理解 chunk / topK / threshold / metadata 的角色。</p>
 <p class="small">配套 Demo：<code>demos/12-markdown-rag</code>。参考卡：<a href="../reference/0011-markdown-rag-quick-reference.html">RAG 快速参考</a>。</p></header>
 
-<section><h2>三步骤</h2>
+<div class="callout">
+<strong>你今天要获得的一个能力：</strong>能独立把一份 Markdown 文档切分、向量化、写入向量库，并用 <code>QuestionAnswerAdvisor</code> 让 LLM 只基于你的知识库回答；出问题时能用 <code>/rag/retrieve</code> 判断是"检索差"还是"生成差"。
+</div>
+
+<section><h2>RAG 工作全链路：为什么叫"检索增强生成"</h2>
+<p>RAG（Retrieval-Augmented Generation）拆开看就是三步：先<strong>检索</strong>相关知识片段，再把片段塞给 LLM 去<strong>生成</strong>答案。它解决的核心问题是：LLM 的参数里没有你的私有知识（公司文档、产品手册、内部 Wiki），直接问会"一本正经胡说八道"。RAG 在推理时临时外挂一个"开卷考试"的资料夹。</p>
+<p>完整链路分两阶段，缺一不可：</p>
+<h3>Ingest 阶段（离线索引，跑一次/文档变更时重跑）</h3>
+<pre><code>┌─────────────┐    ┌──────────────────┐    ┌───────────────┐    ┌──────────────┐
+│ Markdown 文件 │───▶│ TokenTextSplitter│───▶│EmbeddingModel │───▶│ VectorStore  │
+│ (docs/*.md)  │    │ chunkSize=400    │    │ text-embedding│    │ SimpleVector │
+│ TextReader   │    │ overlap=200      │    │ -v2 (1536维)  │    │ Store (内存) │
+└─────────────┘    └──────────────────┘    └───────────────┘    └──────────────┘
+       │                   │                     │                    │
+  读原始文本         按 token 切块           每个 chunk           存 id+vector
+  保留 source       相邻块重叠防断句        → 1536 维浮点向量      +metadata+原文
+</code></pre>
+<p>Ingest 的关键产物是：每个 Markdown 文档被切成若干个 chunk，每个 chunk 被编码成一个固定维度的浮点向量，连同原文和 metadata（source 文件、章节、版本号等）一并写入向量库。</p>
+<h3>Query 阶段（在线问答，用户每次提问都走）</h3>
+<pre><code>用户问题 ──▶ EmbeddingModel ──▶ 向量 ──▶ VectorStore.similaritySearch(topK, threshold)
+                                                         │
+                                                         ▼
+                                              ┌─────────────────────┐
+                                              │ topK 个 chunk       │
+                                              │ (带 score/source)   │
+                                              └─────────┬───────────┘
+                                                        │
+                            ┌───────────────────────────┼───────────────────────────┐
+                            ▼                           ▼                           ▼
+                     System Prompt              "参考资料:" 块              User 原始问题
+                    "仅根据参考资料回答"       [chunk1][chunk2]...            "xxx 是什么?"
+                            └───────────────────────────┼───────────────────────────┘
+                                                        ▼
+                                                      LLM ──▶ 带出处的回答
+</code></pre>
+<p>Query 阶段用户的问题也经过同一个 EmbeddingModel 变成向量，拿这个向量去库里做余弦相似度检索，挑出最相关的 topK 个 chunk，由 <code>QuestionAnswerAdvisor</code> 自动拼进 Prompt 的"参考资料"区域，再发给 LLM。LLM 看到的是"系统指令 + 参考资料 + 用户问题"三件套，因此它的回答被"锚定"在你的知识库上——这就是"检索增强生成"。</p></section>
+
+<section><h2>三步骤速览</h2>
 <pre><code>Markdown → TextReader → TokenTextSplitter → EmbeddingModel → VectorStore  (Ingest)
 Query → EmbeddingModel → similaritySearch(topK) → chunks              (Retrieve)
 System Prompt + chunks + question → LLM → answer                       (Generate)</code></pre></section>
+
+<section><h2>Embedding 向量到底是什么</h2>
+<p>Embedding 模型把一段文本映射成一个固定长度的浮点数组，称为"向量"。本课用的是阿里云 DashScope 的 <code>text-embedding-v2</code>，输出维度默认 <strong>1536 维</strong>（也支持 768 维）。可以把它想象成"语义坐标系里的一个点"：</p>
+<ul>
+<li>语义相近的两段话（"如何退款" / "退货流程是怎样的"），它们的向量在 1536 维空间里距离很近——用<strong>余弦相似度</strong>衡量，越接近 1 越相似。</li>
+<li>语义无关的文本（"退款流程" vs "今天天气"），距离很远，余弦相似度接近 0 甚至为负。</li>
+<li>向量检索本质上就是"用问题向量 vs 所有 chunk 向量做 K 近邻搜索"，比关键词匹配（like/TF-IDF）更懂同义词和语义。</li>
+</ul>
+<div class="callout">
+<strong>重要认知：Embedding 模型和 Chat 模型可以不是同一家。</strong>比如你可以用 DashScope <code>text-embedding-v2</code> 做向量化，用 <code>qwen-plus</code> 做生成；甚至用开源的 <code>bge-large-zh</code> 本地部署 embedding、调用云端大模型回答。Spring AI 的 <code>EmbeddingModel</code> 和 <code>ChatModel</code> 是两个独立接口，完全解耦。
+<br><br>但要注意：<strong>写入向量库时用的哪个 embedding 模型，检索时就必须用同一个</strong>，否则向量空间不一致，相似度无意义。
+</div></section>
+
+<section><h2>TokenTextSplitter：为什么按 token 切不按字符切</h2>
+<p>切 chunk 的目标是让每段文本"语义完整、且放得进 LLM 上下文窗口"。LLM 的上下文窗口（如 qwen-plus 128k）按 <strong>token</strong> 计数，而不是按汉字或字节。一个中文汉字大约 1~2 个 token，一个英文单词约 1~3 个 token；如果按固定字符数切（如每段 500 字），实际 token 数会随中英文比例剧烈波动，可能塞进上下文时超限、或者浪费窗口。</p>
+<p><code>TokenTextSplitter</code> 默认参数：</p>
+<table>
+<thead><tr><th>参数</th><th>默认值</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td><code>chunkSize</code></td><td>400 (tokens)</td><td>每个 chunk 的目标 token 数上限</td></tr>
+<tr><td><code>overlap</code></td><td>200 (tokens)</td><td>相邻 chunk 重叠 token 数</td></tr>
+<tr><td><code>keepSeparator</code></td><td>false</td><td>切分后是否保留分隔符（换行/标点）</td></tr>
+</tbody></table>
+<p><strong>为什么要 overlap（重叠）？</strong>考虑这句："Spring AI Alibaba 支持三种模型：A、B、C，分别用于…"。如果句子刚好在"B、"处被切断，前一个 chunk 说"支持三种模型：A、B"，后一个 chunk 以"C，分别用于…"开头，两个 chunk 单独看都不完整，检索时容易漏召回或产生歧义。overlap 让关键信息在两个 chunk 里都被看到，保证边界句子语义完整。overlap 一般设为 chunkSize 的 20~30%。</p>
+<p>针对 Markdown 还要特别处理：</p>
+<ul>
+<li><strong>表格</strong>：不能在表中间切，否则 markdown 表格语法被破坏，LLM 看不懂。生产建议先按 <code>\n##</code> 标题切一级，再对大块做 token 切分。</li>
+<li><strong>代码块</strong>：<code>```...```</code> 整体保留，别在代码中间切。</li>
+<li><strong>标题层级</strong>：把上级标题（<code># 一级 / ## 二级</code>）作为前缀拼给每个 chunk，避免"孤立小节"——chunk 只有"## 安装"却不知道是哪个产品的安装。</li>
+</ul></section>
+
+<section><h2>QuestionAnswerAdvisor 内部做了什么</h2>
+<p>很多人以为 <code>QuestionAnswerAdvisor</code> 有魔法，其实它只是一个 <code>Advisor</code>（拦截器），在请求发给 LLM 之前自动做了两件事：</p>
+<ol>
+<li><strong>检索</strong>：拿 user message 调 <code>vectorStore.similaritySearch(query, topK, threshold)</code>，拿回 topK 个 <code>Document</code>。</li>
+<li><strong>拼 Prompt</strong>：把召回的 chunk 拼成一段"参考资料"文本，塞进 user message；同时在 system prompt 里追加一段约束，指示 LLM 只能基于参考资料回答。</li>
+</ol>
+<p>它内部使用的 Prompt 模板大致长这样（简化示意，真实模板见 Spring AI 源码）：</p>
+<pre><code># 追加到 System Prompt（约）：
+你是一个问答助手，只能根据下方"参考资料"回答用户问题。
+如果参考资料里没有答案，请明确说"暂未收录相关信息"，不要编造。
+回答时请标注引用来源（source 文件名）。
+
+# User Message 拼装后（约）：
+--- 参考资料 ---
+[doc1] (source=xxx.md, score=0.82)
+Spring AI Alibaba 支持的模型包括：qwen-turbo、qwen-plus、qwen-max...
+
+[doc2] (source=yyy.md, score=0.76)
+ChatClient 是流式调用入口，通过 builder 模式创建...
+--- 参考资料结束 ---
+
+用户问题：ChatClient 怎么用？写一段最小示例</code></pre>
+<p>这也是为什么 RAG 能"防幻觉"——不是模型变聪明了，而是你在 Prompt 里明确禁止它编造，并给了它可引用的材料。</p></section>
+
+<section><h2>/rag/retrieve 调试接口：先看命中再看回答</h2>
+<p>Demo 里暴露了 <code>/rag/retrieve</code>，它只检索不生成，返回每个命中的 <code>source</code>、<code>score</code>、<code>text</code>。这个接口价值极大，是 RAG 问题定位的"第一站"：</p>
+<div class="grid">
+<div class="card"><h3>retrieve 命中不对（score 低/片段不相关）</h3><p>问题在<strong>检索侧</strong>：调 embedding、调 chunkSize/overlap、加 metadata 过滤、换更好的切分策略。此时换大模型毫无帮助。</p></div>
+<div class="card"><h3>retrieve 命中对但 answer 还是错</h3><p>问题在<strong>生成侧</strong>：Prompt 约束不够强、chunk 顺序错乱、topK 太大塞进噪声、或模型本身推理能力不足。此时再考虑换模型或调 Prompt。</p></div>
+<div class="card"><h3>retrieve 和 answer 都好</h3><p>链路基本对了，再去做评估集、上线灰度。</p></div>
+</div>
+<p class="small">经验：80% 的 RAG 问题出在检索侧。不要上来就换 qwen-max，先用 <code>/rag/retrieve</code> 看清楚召回了什么。</p></section>
+
+<section><h2>核心配置与参数</h2>
+<table>
+<thead><tr><th>参数</th><th>默认值</th><th>何时调 / 怎么调</th></tr></thead>
+<tbody>
+<tr><td><code>spring.ai.vectorstore.simple.*</code></td><td>—</td><td>仅学习用，生产不要用 SimpleVectorStore</td></tr>
+<tr><td>TokenTextSplitter.chunkSize</td><td>400</td><td>FAQ/短知识 200~400；长文档/技术手册 600~1000</td></tr>
+<tr><td>TokenTextSplitter.overlap</td><td>200</td><td>≈ chunkSize 的 20~30%；表格多/代码多适当加大</td></tr>
+<tr><td>similaritySearch.topK</td><td>4</td><td>小知识库 3~5；大知识库/复杂问题 6~10，太大会塞噪声</td></tr>
+<tr><td>similarityThreshold</td><td>0.0（不过滤）</td><td>0.3 起调试；阈值过高会漏召回，过低会召垃圾</td></tr>
+<tr><td>Embedding 模型维度</td><td>1536 (v2)</td><td>选定后别随便换；换模型必须全量重建索引</td></tr>
+</tbody></table></section>
 
 <section><h2>关键组件</h2>
 <div class="grid">
 <div class="card"><h3>SimpleVectorStore</h3><p>内存实现，学习首选，重启失效。</p></div>
 <div class="card"><h3>QuestionAnswerAdvisor</h3><p>自动检索 topK、拼进 Prompt。</p></div>
 </div></section>
+
+<section><h2>核心代码：Ingest + Ask 两个接口就够了</h2>
+<p>下面是 Demo 的最小骨架（省略 import 和异常处理），整体就三步：启动时 ingest 文档、暴露 <code>/rag/retrieve</code> 调试、暴露 <code>/rag/ask</code> 问答。</p>
+<pre><code>// 1) 启动时把 classpath 下 docs/*.md 全量灌入向量库
+@Bean
+CommandLineRunner ingest(ResourcePatternResolver resolver,
+                         TextReader reader,          // Markdown 文档读取
+                         TokenTextSplitter splitter, // token 切分
+                         EmbeddingModel embedding,   // text-embedding-v2
+                         VectorStore vectorStore) {  // SimpleVectorStore
+    return args -&gt; {
+        Resource[] docs = resolver.getResources("classpath:docs/*.md");
+        List&lt;Document&gt; all = new ArrayList&lt;&gt;();
+        for (Resource doc : docs) {
+            // 读原文 + 打 metadata（source 文件名用于溯源）
+            List&lt;Document&gt; pages = reader.read(List.of(
+                new AbstractResource.DocumentMetadata("source", doc.getFilename())));
+            // 按 token 切 chunk（chunkSize=800, overlap=200）
+            List&lt;Document&gt; chunks = splitter.split(pages);
+            all.addAll(chunks);
+        }
+        vectorStore.add(all); // 内部会逐个调 embeddingModel.embed()
+    };
+}
+
+// 2) 检索调试接口：只召回不生成，排错第一站
+@PostMapping("/rag/retrieve")
+public Map&lt;?,?&gt; retrieve(@RequestBody Map&lt;String,String&gt; req) {
+    String q = req.get("question");
+    List&lt;Document&gt; hits = vectorStore.similaritySearch(
+        SearchRequest.query(q)
+                     .withTopK(4)
+                     .withSimilarityThreshold(0.3));
+    return Map.of("question", q, "hits",
+        hits.stream().map(d -&gt; Map.of(
+            "source", d.getMetadata().get("source"),
+            "score",  d.getMetadata().get("distance"),
+            "text",   d.getContent()
+        )).toList());
+}
+
+// 3) 问答接口：挂上 QuestionAnswerAdvisor 即可自动 RAG
+@PostMapping("/rag/ask")
+public Map&lt;?,?&gt; ask(@RequestBody Map&lt;String,String&gt; req, ChatClient.Builder builder) {
+    ChatClient client = builder.defaultAdvisors(
+        QuestionAnswerAdvisor.builder(vectorStore)
+            .withSearchRequest(SearchRequest.defaults()
+                .withTopK(4)
+                .withSimilarityThreshold(0.3))
+            .build()
+    ).build();
+
+    String answer = client.prompt()
+        .user(req.get("question"))
+        .call()
+        .content();
+    return Map.of("success", true, "answer", answer);
+}</code></pre>
+<p class="small">关键观察：<code>QuestionAnswerAdvisor</code> 把"检索 + 拼 Prompt"包掉了，业务代码只要一个 builder；你想自定义"仅根据参考资料回答"这类 system 约束，可以用 <code>.withSystemPromptTemplate(...)</code> 覆盖默认模板。</p></section>
 
 <section><h2>怎么调 chunk / topK</h2>
 <ul>
@@ -47,8 +221,18 @@ System Prompt + chunks + question → LLM → answer                       (Gene
 # 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
 </ol></div>
 <h4>⚡ 3 条命令快速验证 12-markdown-rag</h4>
-<pre><code>curl -X POST http://localhost:8091/rag/retrieve -H 'Content-Type: application/json' -d '{"question":"Spring AI Alibaba 支持哪些模型"}'
-curl -X POST http://localhost:8091/rag/ask -H 'Content-Type: application/json' -d '{"question":"ChatClient 怎么用"}'</code></pre>
+<pre><code># 1) 仅检索不生成：查看召回的 markdown 片段（source/score/text）
+curl -X POST http://localhost:8091/rag/retrieve \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Spring AI Alibaba 支持哪些模型"}'
+# 2) RAG 问答：自动检索 topK=4 片段并注入 Prompt 生成回答
+curl -X POST http://localhost:8091/rag/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"ChatClient 怎么用？写一段最小示例"}'
+# 3) 问一个知识库里没有的问题 → 模型应回答"暂未收录/未找到相关内容"
+curl -X POST http://localhost:8091/rag/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Spring AI Alibaba 怎么集成 Kubernetes CRD"}'</code></pre>
 </section>
 
 <section><h2>检索练习</h2>
@@ -65,5 +249,27 @@ curl -X POST http://localhost:8091/rag/ask -H 'Content-Type: application/json' -
 <div class="quiz-options"><button data-option="A">chunk 变小</button><button data-option="B">换向量模型</button><button data-option="C">给 chunk 加 version metadata，检索时过滤</button></div><p class="quiz-feedback small"></p></div>
 </section>
 
-<section><h2>课后问答</h2><ul><li>"生产该用什么向量库？"</li><li>"如何评估召回质量？"</li></ul></section>
+<section><h2>边界与常见坑（生产必看）</h2>
+<div class="callout warning">
+<p><strong>坑 1：SimpleVectorStore 只在内存里，重启就丢。</strong>Demo 用它是为了零依赖快速跑通；生产必须换持久化向量库：小规模用 <strong>PGVector</strong>（复用 PostgreSQL），中大规模用 <strong>Milvus</strong> / <strong>Elasticsearch 8.x+dense_vector</strong> / <strong>OpenSearch</strong>。Spring AI Alibaba 已提供对应 starter，改一行依赖和配置即可切换。</p>
+<p><strong>坑 2：向量维度和 embedding 模型强绑定，不能随便换模型。</strong>用 text-embedding-v2（1536 维）建的索引，不能切到 bge-large-zh（1024 维）直接查——维度不匹配会报错，维度恰好一致也会因为"语义坐标系不同"导致结果完全错乱。换 embedding 模型等价于"换坐标系"，必须全量重建索引。</p>
+<p><strong>坑 3：Markdown 解析不处理表格/代码块/标题会导致 RAG 效果大打折扣。</strong>默认 <code>TextReader</code> 是纯文本读取，不会按 <code>\n##</code> 分段，也不会识别 <code>```</code> 代码块。生产上要用支持 Markdown AST 的 reader（或自己按标题预切），并把上级标题路径作为 metadata 拼给每个 chunk（如 <code>doc_type=api&amp;section=ChatClient&amp;version=1.0</code>）。</p>
+<p><strong>坑 4：similarityThreshold=0.3 是经验值不是真理。</strong>不同 embedding 模型、不同语种、不同知识库主题下分数分布差异很大。正确做法：拿 20~50 个标注问题跑 <code>/rag/retrieve</code>，人工看 topK 命中，画出 score 分布再定阈值。阈值没调好，要么"答非所问"（阈值低），要么"什么都说暂未收录"（阈值高）。</p>
+<p><strong>坑 5：缺 metadata 过滤会把不该给用户看的 chunk 喂给 LLM。</strong>多租户/多业务线/多版本场景下，必须在 <code>similaritySearch</code> 时传入 <code>Filter.expression</code>（如 <code>where version == '2.0' and tenant == 'A'</code>），否则不同客户的知识库会互相污染，甚至引发数据泄露。</p>
+<p><strong>坑 6：知识库更新每次都全量重建索引。</strong>生产文档会经常更新，全量重建在文档上千时会拖垮 embedding 调用（QPS/费用双高）。要做<strong>增量索引</strong>：根据文件 hash/mtime 判断哪些文件变了，只删除旧 chunk 并写入新 chunk；向量库侧用 <code>remove by id/source</code> 支持精确删除。</p>
+</div></section>
+
+<section><h2>主资料</h2>
+<ul>
+<li><a href="https://java2ai.com" target="_blank" rel="noopener">Java2AI — Spring AI Alibaba 中文教程与示例</a></li>
+<li><a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba — 官方仓库，含 QuestionAnswerAdvisor / VectorStore AutoConfiguration 源码</a></li>
+<li><a href="https://docs.spring.io/spring-ai/reference/api/vectordbs.html" target="_blank" rel="noopener">Spring AI 官方参考 — Vector Stores 抽象与各实现</a></li>
+<li><a href="https://help.aliyun.com/zh/model-studio/user-guide/embedding" target="_blank" rel="noopener">阿里云百炼 — text-embedding-v/v2/v3 模型文档、维度、计费、限流</a></li>
+</ul></section>
+
+<section><h2>课后问答</h2><ul>
+<li>"生产该用什么向量库？PGVector、Milvus、Elasticsearch 怎么选？"</li>
+<li>"如何评估 RAG 的召回质量（Hit Rate / MRR）和回答质量？"</li>
+<li>"知识库有 10 万份 Markdown，怎么做增量索引和版本管理？"</li>
+</ul></section>
 </main></body></html>

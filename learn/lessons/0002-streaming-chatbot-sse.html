@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
+<meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>流式 ChatBot 与 SSE</title>
   <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">
   <script src="../assets/quiz.js" defer></script>
-</head>
+  <script src="../assets/nav.js" defer></script></head>
 <body>
 <main>
   <header>
@@ -89,6 +90,57 @@ text/event-stream</code></pre>
   </section>
 
   <section>
+    <h2>SSE 原理：为什么"打字机效果"不是 WebSocket</h2>
+    <p>SSE（Server-Sent Events）本质上是一个 <strong>不关闭的 HTTP 长连接</strong>：客户端发起一次普通 HTTP 请求，服务端把 <code>Content-Type</code> 设为 <code>text/event-stream</code>，然后持续往响应体里写 <code>data: ...</code> 格式的文本帧，直到写完一个特殊的 <code>data:[DONE]</code> 帧表示结束。整个过程走的是标准 HTTP，不需要协议升级，不需要双向帧，代理、鉴权、Cookie 全部沿用现成方案。</p>
+
+    <p>下面是一次流式回答从模型到浏览器的完整链路。注意：<strong>响应式流的"背压"是从 Flux 一路传递到 Servlet/WebFlux 容器的</strong>，所以慢客户端不会让服务端 OOM。</p>
+
+    <pre><code>┌─────────┐  token chunk  ┌──────────────────┐  onNext  ┌────────────┐  write+flush ┌──────────┐
+│ 大模型  │ ────────────▶ │ Spring AI        │ ───────▶ │ WebFlux /  │ ───────────▶ │ TCP 连接 │
+│(DashScope│  Server-Sent  │ ChatClient.stream│ Flux&lt;String&gt;| Servlet 3.1|   text/event-│  浏览器    │
+│  流式响应)│  Events over │   .content()     │          │ SseEmitter │   stream 帧  │ EventSource│
+└─────────┘   HTTPS       └──────────────────┘          └────────────┘              └──────────┘
+              ▲                                                            ▲
+              │ 1 条 HTTP POST，不升级协议                                    │ data:xxx\n\n 逐帧
+              │ Content-Type: text/event-stream                            │ 以 \n\n 分隔
+              │ Cache-Control: no-cache                                    │ 末帧 data:[DONE]</code></pre>
+
+    <h3>SSE 帧长什么样</h3>
+    <p>每一帧以一行 <code>data:</code> 开头，以两个换行 <code>\n\n</code> 结束。浏览器 <code>EventSource</code> 收到空行就把这一帧交给 <code>onmessage</code>。模型每吐出一个（或一小段）token，服务端就写一帧。</p>
+    <pre><code>data:你
+
+data:好
+
+data:，
+
+data:我是
+
+data:通义千问
+
+data:[DONE]
+
+</code></pre>
+
+    <div class="grid">
+      <div class="card">
+        <h3>SSE</h3>
+        <p>HTTP 单向（服务端→客户端），基于 HTTP/1.1 长连接或 HTTP/2 多路复用；<strong>文本帧</strong>，浏览器原生 <code>EventSource</code> API；自动重连；穿透企业代理最容易；<strong>最适合 ChatBot 这类"问一句、答一段"场景</strong>。</p>
+      </div>
+      <div class="card">
+        <h3>WebSocket</h3>
+        <p>双向全双工，需要 HTTP Upgrade 握手机制；二进制/文本帧皆可；要自己做心跳、重连、子协议；适合<strong>双向高频交互</strong>（协同编辑、在线游戏、语音双向流），对单向 LLM 输出属于"杀鸡用牛刀"。</p>
+      </div>
+    </div>
+
+    <h3>curl 里 <code>-N</code> 和 <code>Accept: text/event-stream</code> 分别干嘛</h3>
+    <ul>
+      <li><code>curl -N</code>（<code>--no-buffer</code>）：禁用 curl 自己的 16KB 输出缓冲。不加 <code>-N</code> 你会看到<strong>所有 token 攒成一坨在流结束时一次性打印</strong>，误以为服务端没流。</li>
+      <li><code>-H 'Accept: text/event-stream'</code>：告诉 Spring MVC 你想要 SSE 渲染器。Spring 的内容协商会根据 <code>produces</code> + <code>Accept</code> 选择 <code>text/event-stream</code> 的 <code>HttpMessageConverter</code>，否则可能回退成 JSON 序列化整个 <code>Flux</code>。</li>
+      <li>注意：SSE 是 <strong>POST</strong> 也可以（本课的 <code>/chat/stream</code> 就是 POST），不是只能 GET。<code>EventSource</code> 原生只支持 GET，POST 场景用 <code>fetch</code> + <code>ReadableStream</code>（见下一节浏览器示例）。</li>
+    </ul>
+  </section>
+
+  <section>
     <h2>核心代码对比</h2>
     <h3>同步接口</h3>
     <pre><code>String answer = chatClient.prompt()
@@ -104,6 +156,153 @@ public Flux&lt;String&gt; stream(@RequestBody AskRequest request) {
             .stream()
             .content();
 }</code></pre>
+
+    <h3>完整可运行版本（含 DTO、异常兜底、日志）</h3>
+    <p>下面是贴近企业写法的 Controller，关键点都加了注释：</p>
+    <pre><code>@RestController
+@RequestMapping("/chat")
+public class StreamingChatController {
+
+    private final ChatClient chatClient;
+
+    // 推荐构造器注入；ChatClient 通过 ChatClient.Builder 构建，
+    // Spring AI Alibaba starter 会自动把 DashScope 的 ChatModel 注入进来
+    public StreamingChatController(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    // 请求体 DTO，Java 17+ 直接用 record
+    public record AskRequest(String question) {}
+
+    /**
+     * 流式问答接口
+     * - produces = TEXT_EVENT_STREAM_VALUE 告诉 Spring 用 SSE 渲染
+     * - 返回 Flux&lt;String&gt; 即可，框架自动把每个 onNext 写成一个 data: 帧
+     * - 流结束时 Spring 会自动写 [DONE] 吗？不会，真正的 [DONE] 是前端约定；
+     *   与 OpenAI 兼容时通常自己 concat 一个 "[DONE]" 哨兵（见下）
+     */
+    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux&lt;String&gt; stream(@RequestBody AskRequest req) {
+        return chatClient.prompt()
+                .user(req.question())
+                .stream()
+                .content()
+                // 生产环境必须兜底：模型侧异常如果不 resume，
+                // 会以 error 信号关闭连接，前端只看到连接中断拿不到原因
+                .onErrorResume(e -&gt; Flux.just("[ERROR] " + e.getMessage()));
+    }
+}</code></pre>
+  </section>
+
+  <section>
+    <h2>浏览器端消费 SSE：10 行 JS 实现打字机</h2>
+    <p>后端是 SSE，前端最直接的消费方式是 <code>EventSource</code>。但 <code>EventSource</code> 只支持 GET，所以当你需要 POST JSON（带问题体）时，用 <code>fetch</code> + <code>ReadableStream</code> 即可。下面给出一个最小可跑的前端片段，直接粘到浏览器 DevTools Console 或前端工程里都可以：</p>
+
+    <pre><code>// POST + SSE 的最小前端示例
+const output = document.body; // 实际项目换成 &lt;pre&gt; 或聊天窗口 DOM
+const resp = await fetch('/chat/stream', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+  body: JSON.stringify({ question: '用一句话解释 SSE' })
+});
+
+const reader = resp.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+
+  // SSE 帧以 \n\n 分隔，按帧切分
+  let idx;
+  while ((idx = buffer.indexOf('\n\n')) &gt;= 0) {
+    const frame = buffer.slice(0, idx);           // 形如 "data:你好"
+    buffer = buffer.slice(idx + 2);
+    const payload = frame.replace(/^data:\s?/, '');
+    if (payload === '[DONE]') break;              // 后端约定的结束哨兵
+    if (payload.startsWith('[ERROR]')) { console.error(payload); break; }
+    output.append(payload);                       // 逐字追加到 DOM = 打字机效果
+  }
+}</code></pre>
+
+    <p class="small">如果你用 EventSource（GET 场景，比如服务端单向通知），代码更短：<code>const es = new EventSource('/chat/stream'); es.onmessage = e =&gt; console.log(e.data);</code>。</p>
+  </section>
+
+  <section>
+    <h2>关键参数与配置</h2>
+    <p>流式接口看起来只有一行 <code>.stream().content()</code>，但企业落地时你会频繁触碰下面这些配置/算子。</p>
+
+    <table>
+      <thead>
+        <tr><th>项</th><th>默认值 / 常见取值</th><th>什么时候需要调</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>spring.ai.dashscope.chat.options.temperature</code></td>
+          <td>模型默认（通义通常 0.7 左右）</td>
+          <td>客服/知识库场景建议 0~0.3 降低幻觉；创意写作 0.7~1.0。</td>
+        </tr>
+        <tr>
+          <td><code>produces = TEXT_EVENT_STREAM_VALUE</code></td>
+          <td>必须显式写</td>
+          <td>不写 Spring 会把 <code>Flux&lt;String&gt;</code> 当 JSON 数组一次性序列化，流不起来。</td>
+        </tr>
+        <tr>
+          <td>chunk 粒度（token 级 vs 句级）</td>
+          <td>Spring AI 默认是模型侧原生 chunk，通常 token 级</td>
+          <td>想减少前端重绘/降低 chunk 数量：在 Flux 上加 <code>.bufferTimeout(20, Duration.ofMillis(100))</code> 做句级聚合；不要用 <code>delayElements</code>，那是<strong>人为加延迟</strong>，会让首字更慢。</td>
+        </tr>
+        <tr>
+          <td>SSE 结束哨兵</td>
+          <td>无默认（Spring 不会自动发 <code>[DONE]</code>）</td>
+          <td>要对接 OpenAI SDK/前端统一协议时，在流末尾 <code>.concatWithValues("[DONE]")</code>。</td>
+        </tr>
+        <tr>
+          <td>响应超时 / 空闲超时</td>
+          <td>依容器（Tomcat 默认 connectionTimeout 20s；Netty 无默认）</td>
+          <td>长回答场景要在网关上把 <code>proxy_read_timeout</code>、应用端 <code>server.netty.idle-timeout</code> 调大到 60~120s，否则回答到一半被切断。</td>
+        </tr>
+        <tr>
+          <td><code>@CrossOrigin</code> / CORS</td>
+          <td>默认不允许跨域</td>
+          <td>前端单独部署（不同域/端口）时必须配，否则浏览器预检直接拦。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>边界与常见坑</h2>
+    <div class="callout warning">
+      <p><strong>踩坑 1：Nginx/网关默认缓冲吃掉"打字机"效果。</strong></p>
+      <p>Nginx 反向代理默认开启 <code>proxy_buffering on</code>，会把后端的 SSE 帧攒满缓冲再吐给客户端，现象是<strong>等很久一次性返回全部内容</strong>。必须在 location 里加：</p>
+      <pre><code>location /chat/ {
+    proxy_pass http://backend;
+    proxy_buffering off;          # 关键：关缓冲
+    proxy_cache off;
+    proxy_read_timeout 300s;      # 长回答必须调大
+    proxy_set_header Connection '';  # SSE 走 HTTP/1.1 长连接，不要升级
+    chunked_transfer_encoding off;
+}</code></pre>
+      <p>其他网关（Spring Cloud Gateway、APISIX、Ingress Nginx）同理，都有"响应缓冲"开关，要关掉。</p>
+    </div>
+
+    <div class="callout warning">
+      <p><strong>踩坑 2：Flux 的 <code>onError</code> 信号会直接终止流，用户看到半截回答。</strong></p>
+      <p>模型限流、网络抖动、单 token 序列化失败都可能触发 error。<strong>必须</strong>在 Flux 链末尾挂 <code>onErrorResume</code>，把错误转成一帧可读提示（例如 <code>[ERROR] 模型暂时不可用</code>），而不是让连接粗暴断开。前端也要对 EventSource 的 <code>error</code> 事件和 fetch <code>reader.read()</code> 异常做兜底。</p>
+    </div>
+
+    <div class="callout warning">
+      <p><strong>踩坑 3：移动端网络切换 / 切后台不会自动续传。</strong></p>
+      <p>SSE 基于 TCP 长连接，手机从 Wi-Fi 切 4G、锁屏、App 切后台，连接都会断。浏览器 <code>EventSource</code> 虽然有自动重连，但<strong>重连后之前已生成的 token 全丢了</strong>，用户体验就是回答从头开始/被截断。生产环境需要：(1) 后端给每次流分配 <code>requestId</code>，已生成内容落缓存；(2) 前端重连时带上 <code>Last-Event-ID</code> 或自定义 offset，后端从断点继续推送，或直接把已生成部分作为一次性历史补齐。</p>
+    </div>
+
+    <div class="callout warning">
+      <p><strong>踩坑 4：别用 <code>.delayElements()</code> 控制速度。</strong></p>
+      <p><code>delayElements</code> 是给每个元素<strong>人为增加固定延迟</strong>，会让首字时间（TTFT）跟着变糟，纯属反模式。想"节流以降低前端重绘压力"，请用 <code>.bufferTimeout(N, Duration)</code> 或 <code>.sample(Duration)</code>，按时间/条数聚合 chunk 再发。</p>
+    </div>
   </section>
 
   <section>
@@ -188,8 +387,13 @@ curl -N -X POST http://localhost:8082/chat/stream -H 'Content-Type: application/
 
   <section>
     <h2>主资料</h2>
-    <p>建议本课后阅读：<a href="https://docs.spring.io/spring-ai/reference/api/chatclient.html">Spring AI ChatClient 官方文档</a>，重点关注同步调用和流式调用相关 API。</p>
-    <p>也可以继续参考 <a href="https://java2ai.com/docs/1.0.0.2/overview/">Spring AI Alibaba 官方文档</a>，确认 DashScope Starter 和配置方式。</p>
+    <ul>
+      <li><a href="https://docs.spring.io/spring-ai/reference/api/chatclient.html">Spring AI 参考文档 · ChatClient</a>：<code>call()</code> / <code>stream()</code> 的官方说明，含 Advisor、默认系统提示等高级用法。</li>
+      <li><a href="https://java2ai.com/docs/1.0.0.2/overview/">Spring AI Alibaba 官方文档（java2ai.com）</a>：DashScope Starter 自动装配、<code>spring.ai.dashscope</code> 配置项全部在这里。</li>
+      <li><a href="https://developer.mozilla.org/zh-CN/docs/Web/API/Server-sent_events">MDN · Server-Sent Events</a>：SSE 协议规范、<code>EventSource</code> API、浏览器兼容性一张表说清。</li>
+      <li><a href="https://docs.spring.io/spring-framework/reference/web/webflux.html">Spring Framework 参考 · WebFlux 响应式 Web</a>：理解 <code>Flux</code>、背压、<code>TEXT_EVENT_STREAM</code> 渲染器为什么能写出不 OOM 的流。</li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api">阿里云百炼 · 通义千问 HTTP 调用</a>：模型侧原生 SSE 帧格式、<code>[DONE]</code> 哨兵、finish_reason 字段都在这里。</li>
+    </ul>
   </section>
 
   <section>

@@ -1,21 +1,65 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MCP 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>MCP 快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP 集成快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>MCP 集成快速参考</h1>
+    <p class="small">对应第 0016 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>两个核心方法</h2>
-<pre><code>GET  /mcp/tools    → [{name, description, inputSchema}]
-POST /mcp/call     ← {toolName, arguments} → 结构化结果</code></pre></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>MCP (Model Context Protocol)</code></td><td>JSON-RPC 协议，用于 LLM 跨进程/跨服务调用工具和资源</td></tr>
+      <tr><td><code>stdio 传输</code></td><td>本地子进程，适合本地开发/单机工具</td></tr>
+      <tr><td><code>SSE/HTTP 传输</code></td><td>远程 MCP Server，适合多 Agent 共享工具</td></tr>
+      <tr><td><code>tools/list</code></td><td>列出工具清单（名称、描述、inputSchema）</td></tr>
+      <tr><td><code>tools/call</code></td><td>按 toolName+arguments 调用工具，返回结构化 JSON</td></tr>
+      <tr><td><code>Spring AI MCP Client</code></td><td>spring-ai-mcp-client-spring-boot-starter（稳定后可用）</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>响应协议</h2>
-<pre><code>模型每步只输出：
-  {"tool":"list_files","args":{"dir":"/"}}
-  或 {"final":"给用户的中文回答"}</code></pre></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>undefined</code></pre>
+  </section>
 
-<section><h2>生产要点</h2>
-<ul>
-<li>Server 端加鉴权 / 限流 / 审计。</li>
-<li>Client 端限制循环最大步数。</li>
-<li>写操作走 dryRun preview + 人工确认。</li>
-</ul></section>
-</main></body></html>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>MCP Server 不能信任 Client 传的任意参数，必须做校验（和本地 @Tool 一样）</li>
+      <li>远程 MCP 必须加鉴权（JWT/API Key/mTLS）</li>
+      <li>工具清单过大会占满 Prompt，要按场景过滤暴露给模型</li>
+      <li>跨网络调用 MCP 要设置超时、重试、熔断</li>
+      <li>MCP Server 版本要和 Client 兼容，schema 变更要走版本号</li>
+      <li>所有 MCP 调用要打审计日志（谁、什么时间、调了什么工具、结果）</li>
+      <li>教学 MockMcpServer 是 REST 模拟，真实 MCP 是 JSON-RPC，迁移时注意协议差异</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>知道 MCP 和本地 Tool Calling 的差别吗？</li>
+      <li>会列 MCP 的三种传输方式吗？</li>
+      <li>为什么 MCP 工具也要鉴权校验？</li>
+      <li>知道如何给模型筛工具吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

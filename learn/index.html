@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spring AI Alibaba 课程目录</title>
+  <link rel="stylesheet" href="assets/course.css">
+  <link rel="stylesheet" href="assets/nav.css">
+  <style>
+    /* index 页面专用样式 */
+    .index-hero {
+      padding: 32px 0 28px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 28px;
+    }
+    .index-hero h1 {
+      margin-top: 0.2em;
+      font-size: 2rem;
+    }
+    .index-hero p { color: var(--ink-soft); max-width: 720px; }
+    .meta-row { color: var(--muted); font-size: 0.92rem; margin-top: 12px; display: flex; gap: 20px; flex-wrap: wrap; }
+    .meta-row span::before { content: "· "; color: var(--line); margin-right: 6px; }
+    .meta-row span:first-child::before { content: ""; margin: 0; }
+
+    .stage {
+      margin: 20px 0 32px;
+    }
+    .stage > summary {
+      cursor: pointer;
+      padding: 10px 4px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--ink);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+      border-radius: 8px;
+    }
+    .stage > summary::-webkit-details-marker { display: none; }
+    .stage > summary::before {
+      content: "▸";
+      color: var(--accent);
+      font-size: 0.8rem;
+      width: 14px;
+      display: inline-block;
+      transition: transform 0.15s ease;
+    }
+    .stage[open] > summary::before { transform: rotate(90deg); }
+    .stage > summary:hover { background: var(--accent-soft); }
+    .stage .stage-sub { color: var(--muted); font-size: 0.85rem; font-weight: 400; margin-left: 8px; }
+
+    .lesson-list {
+      list-style: none;
+      padding: 4px 0 0 24px;
+      margin: 0;
+    }
+    .lesson-list li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin: 2px 0;
+    }
+    .lesson-list li:hover { background: var(--line-soft); }
+    .lesson-list .num {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      color: var(--muted);
+      font-size: 0.85rem;
+      min-width: 40px;
+    }
+    .lesson-list a.title {
+      flex: 1;
+      color: var(--ink);
+      text-decoration: none;
+      border: none;
+      font-weight: 500;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      min-width: 0; /* 让 flex item 可以收缩 */
+    }
+    .lesson-list a.title:hover { background: none; color: var(--accent); }
+    .lesson-list .ref {
+      flex: 0 0 auto;
+      font-size: 0.78rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .lesson-list .ref:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .lesson-list .demo-tag {
+      flex: 0 0 auto;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      padding: 1px 6px;
+      background: var(--line-soft);
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .tip-box {
+      margin-top: 40px;
+      padding: 16px 20px;
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+      border-radius: var(--radius);
+    }
+    .tip-box h3 { margin-top: 0; color: var(--accent); font-size: 1rem; }
+    .tip-box p { margin: 0.4em 0; font-size: 0.94rem; color: var(--ink-soft); }
+    .tip-box code { font-size: 0.85em; }
+
+    @media (max-width: 720px) {
+      main { padding: 24px 16px 48px; }
+      .lesson-list li { flex-wrap: wrap; gap: 6px; }
+    }
+
+    @media print {
+      .tip-box { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="index-hero">
+    <div class="eyebrow">Spring AI Alibaba · 学习路径</div>
+    <h1>企业级 AI 应用开发课程</h1>
+    <p>从环境检查到企业级 Agent 平台原型，18 节动手课程 + 18 张速查卡，配合可运行的 Demo（<code>demos/01-…19</code>，端口 8080-8098），中文、代码优先、每节都有可直接复制的 <code>curl</code> 调用示例。</p>
+    <div class="meta-row">
+      <span>共 18 节课</span>
+      <span>18 张速查卡</span>
+      <span>19 个可运行 Demo</span>
+      <span>模型默认：qwen3.7-plus</span>
+    </div>
+  </header>
+
+  <!-- 课程树由 JS 渲染，保证和侧边栏一致 -->
+  <div id="catalog"></div>
+
+  <div class="tip-box">
+    <h3>🎯 推荐学习路径</h3>
+    <p><strong>01–03 基础入门</strong> → <strong>04–06 Prompt 工程</strong> → <strong>07–08 记忆</strong> → <strong>09–11 Tool Calling</strong> → <strong>12–15 RAG 与综合 Agent</strong> → <strong>16–18 进阶</strong></p>
+    <p>每节课都带一个可运行 Demo 和 curl 示例：<code>cd demos/NN-xxx &amp;&amp; mvn spring-boot:run</code>，按课里的 curl 调用即可；学完可以点右侧「卡」按钮打开对应速查卡复习。</p>
+    <p>课程页面左侧有固定的目录树按钮（<strong>≡</strong>），可随时跳转到任意一节；底部有「← 上一节 / 下一节 →」导航。</p>
+  </div>
+</main>
+
+<script>
+// 与 assets/nav.js 保持一致的 NAV 数据
+var NAV = [
+  { group: "基础入门", sub: "环境检查 · ChatBot · 流式 SSE", items: [
+    {n:"0001", title:"从环境检查到最小 ChatBot", file:"lessons/0001-from-environment-check-to-chatbot.html", ref:"reference/0001-chatclient-quick-reference.html", demo:"01, 02"},
+    {n:"0002", title:"流式 ChatBot 与 SSE",          file:"lessons/0002-streaming-chatbot-sse.html",     ref:"reference/0002-streaming-chatbot-sse-quick-reference.html", demo:"03"},
+    {n:"0003", title:"Prompt 学习助手",           file:"lessons/0003-prompt-assistant.html",          ref:"reference/0003-prompt-assistant-quick-reference.html", demo:"04"},
+  ]},
+  { group: "Prompt 工程", sub: "结构化输出 · 模板 · System Prompt", items: [
+    {n:"0004", title:"结构化 JSON 输出",         file:"lessons/0004-structured-output.html",         ref:"reference/0004-structured-output-quick-reference.html", demo:"05"},
+    {n:"0005", title:"Prompt 模板管理",          file:"lessons/0005-prompt-template.html",          ref:"reference/0005-prompt-template-quick-reference.html", demo:"06"},
+    {n:"0006", title:"多轮对话 Memory",          file:"lessons/0006-chat-memory.html",              ref:"reference/0006-chat-memory-quick-reference.html", demo:"07"},
+  ]},
+  { group: "记忆", sub: "会话记忆 · 学员画像", items: [
+    {n:"0007", title:"学习顾问 Memory",          file:"lessons/0007-learning-advisor.html",         ref:"reference/0007-learning-advisor-quick-reference.html", demo:"08"},
+    {n:"0008", title:"Tool Calling 入门：计算器", file:"lessons/0008-calculator-tool.html",         ref:"reference/0008-calculator-tool-quick-reference.html", demo:"09"},
+  ]},
+  { group: "Tool Calling", sub: "工具注册 · 外部 API · 权限上下文", items: [
+    {n:"0009", title:"天气工具：外部 API 风格",   file:"lessons/0009-weather-tool.html",             ref:"reference/0009-weather-tool-quick-reference.html", demo:"10"},
+    {n:"0010", title:"订单查询 Agent",           file:"lessons/0010-order-agent.html",              ref:"reference/0010-order-agent-quick-reference.html", demo:"11"},
+    {n:"0011", title:"Markdown 知识库 RAG",      file:"lessons/0011-markdown-rag.html",             ref:"reference/0011-markdown-rag-quick-reference.html", demo:"12"},
+  ]},
+  { group: "RAG 与综合 Agent", sub: "PDF · 调优 · 客服 · 状态机", items: [
+    {n:"0012", title:"PDF 知识库 RAG",           file:"lessons/0012-pdf-rag.html",                  ref:"reference/0012-pdf-rag-quick-reference.html", demo:"13"},
+    {n:"0013", title:"RAG 参数调优",             file:"lessons/0013-rag-tuning.html",               ref:"reference/0013-rag-tuning-quick-reference.html", demo:"14"},
+    {n:"0014", title:"智能客服 Agent 综合",       file:"lessons/0014-customer-service-agent.html",   ref:"reference/0014-customer-service-agent-quick-reference.html", demo:"15"},
+    {n:"0015", title:"Graph 客服 Agent",         file:"lessons/0015-graph-agent.html",              ref:"reference/0015-graph-agent-quick-reference.html", demo:"16"},
+  ]},
+  { group: "进阶：协议、观测、平台", sub: "MCP · 评测 · 平台原型", items: [
+    {n:"0016", title:"MCP 工具集成",             file:"lessons/0016-mcp.html",                      ref:"reference/0016-mcp-quick-reference.html", demo:"17"},
+    {n:"0017", title:"Agent 日志与评测",         file:"lessons/0017-observability-eval.html",       ref:"reference/0017-observability-eval-quick-reference.html", demo:"18"},
+    {n:"0018", title:"企业级 Agent 平台原型",    file:"lessons/0018-agent-platform.html",           ref:"reference/0018-agent-platform-quick-reference.html", demo:"19"},
+  ]},
+];
+
+var catalog = document.getElementById('catalog');
+var html = '';
+NAV.forEach(function(g){
+  html += '<details class="stage" open>';
+  html += '<summary>' + escapeHtml(g.group) + ' <span class="stage-sub">' + escapeHtml(g.sub||'') + '</span></summary>';
+  html += '<ul class="lesson-list">';
+  g.items.forEach(function(it){
+    html += '<li>';
+    html += '<span class="num">' + it.n + '</span>';
+    html += '<a class="title" href="' + it.file + '">' + escapeHtml(it.title) + '</a>';
+    html += '<span class="demo-tag">demo ' + escapeHtml(it.demo) + '</span>';
+    html += '<a class="ref" href="' + it.ref + '" title="速查卡">卡</a>';
+    html += '</li>';
+  });
+  html += '</ul></details>';
+});
+catalog.innerHTML = html;
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
+</script>
+</body>
+</html>

@@ -1,10 +1,49 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>学习顾问 Memory</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学习顾问 Memory</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0007 · Spring AI Alibaba</div>
 <h1>学习顾问 Memory：短期会话 + 长期画像</h1>
 <p>本课目标：在多轮记忆基础上叠加"用户画像"这一层长期记忆，理解两级记忆的分工。</p>
 <p class="small">配套 Demo：<code>demos/08-learning-advisor</code>。参考卡：<a href="../reference/0007-learning-advisor-quick-reference.html">学习顾问快速参考</a>。</p></header>
+
+<div class="callout">
+<p><strong>你今天要获得的一个能力：</strong>能像组装 Spring MVC Interceptor 链一样，用 <code>Advisor</code> 在 <code>ChatClient</code> 调用前后注入"会话记忆 + 用户画像"两类上下文，并说清它们在链中的顺序、参数如何传递、生产要替换哪些组件。</p>
+</div>
+
+<section><h2>Advisor 拦截器链：ChatClient 的中间件模型</h2>
+<p>如果你熟悉 Spring MVC 的 <code>HandlerInterceptor</code> 或 Servlet 的 <code>Filter</code>，Spring AI 的 <code>Advisor</code> 就是同一套思路：在一次模型调用前后插入可复用的横切逻辑。记忆注入、日志、重试、限流、画像、RAG 检索——全都是 Advisor。</p>
+<pre><code>请求进入
+  │
+  ▼
+┌─────────────────────────────────────────────────────────┐
+│  Advisor 链（按 order 从小到大，request 方向顺序执行）   │
+│                                                         │
+│  [1] ProfileAdvisor.before()  ← 注入长期画像 SystemMsg  │
+│  [2] MessageChatMemoryAdvisor.before() ← 注入短期历史    │
+│  [3] SafeGuardAdvisor.before()  ← 合规/敏感词检查        │
+│                                                         │
+│              ───────────► 调用大模型 ◄───────────        │
+│                                                         │
+│  [3] SafeGuardAdvisor.after()    ← 响应后处理（逆序）    │
+│  [2] MessageChatMemoryAdvisor.after() ← 保存本轮对话    │
+│  [1] ProfileAdvisor.after()     ← 通常无操作             │
+└─────────────────────────────────────────────────────────┘
+  │
+  ▼
+响应返回</code></pre>
+
+<h3>两种 Advisor，两种调用路径</h3>
+<div class="grid">
+<div class="card"><h3>CallAdvisor</h3>
+<p>同步 <code>call()</code> 路径使用。实现 <code>advisedCall()</code>，拿到完整 <code>ChatResponse</code> 后可以改写或落库。<br><code>MessageChatMemoryAdvisor</code>、<code>QuestionAnswerAdvisor</code>（RAG）都实现它。</p></div>
+<div class="card"><h3>StreamAdvisor</h3>
+<p>流式 <code>stream()</code> 路径使用。实现 <code>advisedStream()</code>，拿到 <code>Flux&lt;ChatResponse&gt;</code>，必须在流结束钩子（<code>doOnComplete</code>/<code>doOnTerminate</code>）里保存记忆，否则会漏写。</p></div>
+</div>
+<p class="small">很多官方 Advisor（如 <code>MessageChatMemoryAdvisor</code>）同时实现两个接口，所以 call/stream 都能用；自定义 Advisor 如果只实现其中一个，切到另一种调用方式时就"不生效"，这是新手最常见的第一个坑。</p>
+</section>
 
 <section><h2>两层记忆</h2>
 <div class="grid">
@@ -12,15 +51,117 @@
 <div class="card"><h3>长期 / 画像</h3><ul><li>LearnerProfileStore 存储</li><li>userId 隔离</li><li>"稳定的用户属性"</li></ul></div>
 </div></section>
 
+<section><h2>顺序为什么重要：先画像，再记忆？</h2>
+<p>两级 Advisor 的顺序直接影响 System Prompt 的最终形态。Demo 里注册顺序是 <code>ProfileAdvisor → MessageChatMemoryAdvisor</code>，背后有一个刻意的设计：</p>
+<ol>
+<li><strong>画像 Advisor 在前（order 较小）</strong>：在 <code>before</code> 阶段向 prompt 追加 System Message，描述"你服务的学员是谁"。这是<strong>身份设定</strong>，应该最先就位。</li>
+<li><strong>记忆 Advisor 在后（order 较大）</strong>：从 <code>ChatMemory</code> 取出最近 N 轮消息追加到 prompt 末尾。它只追加消息，不会改写已有 System Message，不会覆盖画像。</li>
+<li><strong>after 阶段顺序反转</strong>：记忆 Advisor 必须在响应完成后把本轮 Q/A 写入 <code>ChatMemory</code>；画像 Advisor 一般不做 after 操作（画像不应被模型自动修改）。</li>
+</ol>
+<div class="callout warning">
+<p><strong>顺序反了会怎样？</strong>如果先注入历史消息、后注入画像 System Message，<code>MessageChatMemoryAdvisor</code> 内部会在第一次调用时把初始 System Prompt 也存进 memory，后续轮次 System Message 被重复拼接；更糟的情况是某些 Advisor 使用 <code>promptContents.add(0, ...)</code> 插到头部，导致你手写的 system 模板被覆盖。结论：<strong>画像/系统设定类 Advisor 始终 order 最小；记忆/检索类 Advisor 紧随其后；审计/日志类 Advisor 放最后。</strong></p>
+</div>
+</section>
+
 <section><h2>怎么把画像给模型</h2>
-<p>不是每轮都塞 user 消息，而是**渲染进 System Prompt**：</p>
+<p>不是每轮都塞 user 消息，而是<strong>渲染进 System Prompt</strong>。画像不是对话消息，它是"用户属性"，不该出现在历史消息流里——这正是我们<strong>不</strong>把画像写进 <code>ChatMemory</code> 的原因。</p>
 <pre><code>String system = """
 你是学习顾问，服务对象画像：
 
 %s
 
 回答规则：...
-""".formatted(profile.toSystemFragment());</code></pre></section>
+""".formatted(profile.toSystemFragment());</code></pre>
+</section>
+
+<section><h2>核心 API：注册 Advisor 与传参</h2>
+<p><code>ChatClient</code> 提供两个层级注册 Advisor：</p>
+<ul>
+<li><code>defaultAdvisors(...)</code>：在构建 Client 时全局注册，所有请求都走；适合记忆、日志、RAG 这类通用横切逻辑。</li>
+<li><code>advisors(...)</code>：在单次 <code>prompt()</code> 请求上临时追加；适合本次请求特有的画像、实验性开关。</li>
+</ul>
+<p>Advisor 之间通过 <code>AdvisedRequest.adviseContext()</code>（一个 <code>Map&lt;String,Object&gt;</code>）传参，对外暴露为 <code>.param(k, v)</code>。你看到的 <code>chat_memory_conversation_id</code>、<code>chat_memory_response_size</code> 本质都是 Advisor 读取的 param。</p>
+<pre><code>// 1) 全局注册：记忆 Advisor + 画像 Advisor
+ChatClient client = ChatClient.builder(chatModel)
+    .defaultSystem(systemTemplate)
+    .defaultAdvisors(
+        MessageChatMemoryAdvisor.builder(chatMemory).build(),   // 短期记忆
+        new ProfileAdvisor(profileStore)                       // 自定义画像 Advisor
+    )
+    .build();
+
+// 2) 请求级别通过 param() 把 userId / conversationId 塞给 Advisor
+ChatResponse resp = client.prompt()
+    .user(question)
+    .param("userId", userId)                         // ProfileAdvisor 读取它
+    .param("chat_memory_conversation_id", convId)    // MessageChatMemoryAdvisor 读取它
+    .param("chat_memory_response_size", 20)          // 保留最近 20 条消息
+    .call()
+    .chatResponse();
+
+// 3) 自定义 Advisor 里如何取 param
+public class ProfileAdvisor implements CallAdvisor, StreamAdvisor {
+    @Override
+    public AdvisedRequest adviseRequest(AdvisedRequest req, Map&lt;String,Object&gt; ctx) {
+        String userId = (String) req.adviseContext().get("userId"); // 从 param 取
+        LearnerProfile p = store.load(userId);
+        // 在 System Message 头部追加画像片段
+        req.promptContents().add(0, new SystemMessage(p.toSystemFragment()));
+        return req;
+    }
+    // after 阶段：通常不修改画像，直接返回 response
+}</code></pre>
+<p class="small"><code>adviseContext()</code> 在同一条链上共享——所以上游 Advisor 塞的值下游能读到，这是链上协作的核心机制，但也意味着命名要 namespace 化（例如 <code>profile.userId</code> 而不是 <code>userId</code>），避免和官方 Advisor 的 key 冲突。</p>
+</section>
+
+<section><h2>关键参数与配置</h2>
+<table>
+<thead><tr><th>参数 / Bean</th><th>默认值</th><th>作用</th><th>什么时候调</th></tr></thead>
+<tbody>
+<tr><td><code>chat_memory_conversation_id</code></td><td>"default"</td><td>决定读/写哪个会话的历史</td><td>每次请求必须传；通常用 sessionId / 业务 id</td></tr>
+<tr><td><code>chat_memory_response_size</code></td><td>20</td><td>从 ChatMemory 取最近多少条回灌 prompt</td><td>token 紧张调小；复杂多轮任务调大</td></tr>
+<tr><td><code>InMemoryChatMemory</code></td><td>—</td><td>默认内存实现，重启丢失</td><td>仅 demo；生产换 <code>JdbcChatMemory</code> / Redis 实现</td></tr>
+<tr><td><code>MessageWindowChatMemory</code>（窗口策略）</td><td>窗口大小 20</td><td>滑动窗口保留最近 N 条</td><td>对 token 最友好；无法追溯远期话题时换 TokenWindow 或摘要记忆</td></tr>
+<tr><td><code>Advisor.getOrder()</code></td><td>0（Ordered.LOWEST_PRECEDENCE 视实现而定）</td><td>决定链上顺序</td><td>系统设定类设最小；审计/日志类设最大</td></tr>
+<tr><td><code>defaultAdvisors</code> vs <code>advisors</code></td><td>—</td><td>全局 vs 单次</td><td>横切逻辑（记忆、RAG、安全）放 default；实验性/灰度放单次</td></tr>
+<tr><td>自定义 <code>LearnerProfileStore</code></td><td>ConcurrentHashMap</td><td>存长期用户画像</td><td>仅 demo；生产必须换 JDBC / Redis / 公司画像中台</td></tr>
+</tbody>
+</table>
+</section>
+
+<section><h2>双层记忆的设计取舍</h2>
+<div class="grid">
+<div class="card"><h3>短期 ChatMemory</h3>
+<ul>
+<li>存"对话消息"（User/Assistant/System）</li>
+<li>按 conversationId 隔离，可被滑动窗口裁剪</li>
+<li>会被 MessageChatMemoryAdvisor 在 after 阶段自动追加新消息</li>
+<li>面向"本次会话连贯性"</li>
+</ul></div>
+<div class="card"><h3>长期 LearnerProfileStore</h3>
+<ul>
+<li>存"用户属性"（岗位、已掌握技能、学习预算）</li>
+<li>按 userId 隔离，跨会话累积</li>
+<li>不会被 Advisor 自动写入；必须走专用 API（或 Tool Calling 经确认后写入）</li>
+<li>面向"个性化服务质量"</li>
+</ul></div>
+</div>
+<div class="callout">
+<p><strong>为什么不把画像也塞进 ChatMemory？</strong>因为 ChatMemory 的写入路径是"每轮 after 自动追加"，这意味着模型的输出会被自动写入。而画像属于"事实/偏好数据"，必须受业务规则保护——模型不能因为一轮对话里用户随口说"我不想学了"就自动把目标岗位清空。把两类数据拆开，写路径分开治理，是把 LLM 应用做稳的关键。</p>
+</div>
+</section>
+
+<div class="callout warning">
+<p><strong>边界与常见坑（生产踩过）</strong></p>
+<ol>
+<li><strong>Map 存储不能上生产。</strong> Demo 里 <code>LearnerProfileStore</code> 是 <code>ConcurrentHashMap</code>，<code>InMemoryChatMemory</code> 也是内存，重启就丢、多实例不共享、还没 TTL。生产替换为 <code>JdbcChatMemory</code>（Spring AI 官方）或基于 Redis/数据库自己实现 <code>ChatMemoryRepository</code> / <code>LearnerProfileStore</code>。</li>
+<li><strong>userId 不能信任前端。</strong> <code>/advisor/ask</code> 里 <code>param("userId", ...)</code> 的值必须来自登录态（JWT / Session），而不是前端传什么就是什么。否则用户 A 传 userId=B 就能读到 B 的画像和历史——这是真实安全事故。</li>
+<li><strong>Advisor order 错乱会覆盖 System Prompt。</strong> 多个 Advisor 都在操作 System Message 时，顺序错一条，你精心写的 system 模板可能被 <code>add(0, ...)</code> 插到后面，模型就"人格错乱"。显式实现 <code>Ordered</code> 接口或用 <code>@Order</code> 注解，把系统设定类 Advisor 的 order 设成最小（如 <code>Ordered.HIGHEST_PRECEDENCE</code>）。</li>
+<li><strong>ChatMemory 并发写要加锁 / 串行化。</strong> <code>MessageChatMemoryAdvisor</code> 的 after 阶段会 <code>memory.add(conversationId, ...)</code>，同一 conversationId 并发两请求（用户连发、SSE 重连、重试）会把历史顺序写乱。生产上要按 conversationId 加分布式锁或对同一 session 的请求串行化。</li>
+<li><strong>流式接口别忘实现 StreamAdvisor。</strong> 只实现 <code>CallAdvisor</code> 的自定义 Advisor，切到 <code>stream()</code> 时完全不生效，还不报错——排查时特别容易绕进去。</li>
+<li><strong>param key 命名冲突。</strong> <code>chat_memory_conversation_id</code>、<code>chat_memory_response_size</code> 是官方保留 key；自定义参数建议加业务前缀（<code>profile.userId</code>、<code>biz.tenantId</code>），避免升级版本后被官方占用。</li>
+</ol>
+</div>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -28,6 +169,7 @@
 <li>问"下周该学什么？"，观察建议是否基于画像。</li>
 <li>不建画像直接问，对比差异。</li>
 <li>修改画像的 targetRole，再问同一问题。</li>
+<li>（选做）故意把 <code>ProfileAdvisor</code> 与 <code>MessageChatMemoryAdvisor</code> 的注册顺序对调，观察 System Prompt 变化（可在日志里打印 <code>promptContents</code>）。</li>
 </ol></div></section>
 
 <section><h2>动手验证：curl 快速调用</h2>
@@ -67,5 +209,19 @@ curl -X POST http://localhost:8087/advisor/ask -H 'Content-Type: application/jso
 <p><strong>Q3：</strong>模型自动"更新"画像该怎么处理？</p>
 <div class="quiz-options"><button data-option="A">直接落库</button><button data-option="B">丢弃</button><button data-option="C">走人工确认或专用工具</button></div><p class="quiz-feedback small"></p></div>
 </section>
-<section><h2>课后问答</h2><ul><li>"画像太多字段，会不会 System Prompt 太长？"</li><li>"能不能把画像存向量库，让模型自己检索？"</li></ul></section>
+<section><h2>主资料</h2>
+<ol>
+<li>Spring AI 官方参考 — Advisor API 与 ChatClient advise：<a href="https://docs.spring.io/spring-ai/reference/api/advisors.html" target="_blank" rel="noopener">docs.spring.io/spring-ai/reference/api/advisors.html</a></li>
+<li>Spring AI 官方参考 — ChatClient Building：<a href="https://docs.spring.io/spring-ai/reference/api/chatclient.html" target="_blank" rel="noopener">docs.spring.io/spring-ai/reference/api/chatclient.html</a></li>
+<li>Spring AI Alibaba GitHub（含 Advisor / ChatMemory 扩展实现）：<a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba</a></li>
+<li>阿里云百炼（DashScope）模型服务文档：<a href="https://help.aliyun.com/zh/model-studio/" target="_blank" rel="noopener">help.aliyun.com/zh/model-studio/</a></li>
+<li>Spring AI Alibaba 中文参考站：<a href="https://java2ai.com" target="_blank" rel="noopener">java2ai.com</a></li>
+</ol>
+</section>
+
+<section><h2>课后问答</h2><ul>
+<li>"画像字段太多，会不会 System Prompt 太长撑爆 context？" — 会。解决思路：按场景做字段裁剪（教学答疑场景不要塞购物偏好），或对画像本身做"摘要压缩"，保留最影响回答的 3-5 个字段。</li>
+<li>"能不能把画像存向量库，让模型自己检索？" — 不推荐。画像属于强约束属性，不是"可能相关的参考资料"，RAG 检索有召回率问题，模型可能忽略。画像应该像 system prompt 一样<em>确定注入</em>，而不是概率性召回。</li>
+<li>"如果要让模型根据对话<em>自动更新</em>画像（比如发现用户换了目标岗位），怎么设计才安全？" — 不要让 Advisor 在 after 阶段直接写画像。用 Tool Calling 暴露一个 <code>updateProfile(field, newValue, reason)</code> 工具，由模型主动调用；后端做字段白名单 + 置信度/人工确认 + 变更审计，避免模型"幻觉"污染长期数据。</li>
+</ul></section>
 </main></body></html>

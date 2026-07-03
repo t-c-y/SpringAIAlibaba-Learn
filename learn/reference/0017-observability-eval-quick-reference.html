@@ -1,20 +1,65 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>观测与评测快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>观测评测快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>观测与评测快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>观测与评测快速参考</h1>
+    <p class="small">对应第 0017 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>三大指标域</h2>
-<div class="grid">
-<div class="card"><h3>质量</h3><ul><li>评测集通过率</li><li>Red-team 未越权率</li></ul></div>
-<div class="card"><h3>成本</h3><ul><li>token 消耗</li><li>模型价格分层</li></ul></div>
-<div class="card"><h3>延迟</h3><ul><li>P50 / P95 / P99</li><li>各 Advisor 耗时</li></ul></div>
-</div></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>latencyMs</code></td><td>端到端响应延迟，关注 P50/P95/P99 不只看平均值</td></tr>
+      <tr><td><code>estTokens</code></td><td>token 估算（input+output），用于成本核算</td></tr>
+      <tr><td><code>LLM-as-Judge</code></td><td>用更强模型做裁判，判 pass/fail 并给出 reason</td></tr>
+      <tr><td><code>judge temperature</code></td><td>裁判模型 temperature=0（判分要稳定）</td></tr>
+      <tr><td><code>Micrometer Observation</code></td><td>Spring AI 内置 ObservationRegistry 可接 Zipkin/Prometheus</td></tr>
+      <tr><td><code>hit@k / MRR / faithfulness</code></td><td>检索/回答质量的三个关键指标</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>评测集覆盖面</h2>
-<ol>
-<li>Happy path（主流程）</li>
-<li>边界（超长输入、空输入、多语言）</li>
-<li>拒答（越权、不在知识库）</li>
-<li>Red-team（提示词注入、诱导 unsafe）</li>
-</ol></section>
-</main></body></html>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>undefined</code></pre>
+  </section>
+
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>Judge 模型有偏好和偏差，必须做人工抽检校准</li>
+      <li>评测集要持续补充（线上 badcase 回灌），否则会过拟合</li>
+      <li>P99 延迟比平均值更有运维价值（用户感知的是长尾）</li>
+      <li>input/output token 价格不同，统计要分开</li>
+      <li>日志里的用户问题/回答要做 PII 脱敏</li>
+      <li>模型/参数/Prompt 升级必须做 A/B 对比，不能直接全量</li>
+      <li>线上要采样留存请求（如 1%）用于后续回归评测</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会用 LLM-as-Judge 写一个评测接口吗？</li>
+      <li>知道 P99 延迟比平均重要吗？</li>
+      <li>Judge 模型为什么要 temperature=0？</li>
+      <li>评测集怎么迭代？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

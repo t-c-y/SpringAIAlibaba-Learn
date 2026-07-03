@@ -8,6 +8,34 @@
 
 ---
 
+## 📚 课程目录（推荐入口）
+
+项目内置一套可直接在浏览器打开的**中文课程站点**，包含 18 节课、18 张速查卡，侧边栏目录可随时收起/展开，课程页底部有「上一节 / 下一节」导航：
+
+```text
+learn/index.html   ← 从这里开始（课程首页 / 目录树）
+```
+
+**打开方式（任选其一）：**
+
+```bash
+# 方式一：直接用浏览器打开（macOS）
+open learn/index.html
+
+# 方式二：在 learn/ 目录下启动一个静态服务（推荐，避免浏览器 file:// 下部分特性受限）
+cd learn && python3 -m http.server 8000
+# 然后访问 http://localhost:8000/
+```
+
+进入后用法：
+
+- 点左上角 **≡** 按钮打开/收起课程目录树；目录状态会被浏览器记住。
+- 目录树中每节课标题末尾的小按钮 `卡` 可直接跳到对应速查卡（速查卡里同一位置是 `课`，可跳回课程）。
+- 课程页底部有 **← 上一节 / 🏠 / 下一节 →** 导航，支持线性学习。
+- 学完一节，按课里的 "动手验证" 部分 `cd demos/NN-xxx && mvn spring-boot:run` 跑对应 Demo，再用给好的 `curl` 命令验证。
+
+---
+
 ## 适合人群
 
 适合以下开发者：
@@ -105,52 +133,34 @@ learn/reference/0001 ~ 0018-quick-reference.html   # 复习用速查卡
 ```text
 .
 ├── README.md
-├── demos
-│   ├── 01-environment-check
-│   │   ├── README.md
-│   │   ├── pom.xml
-│   │   └── src
-│   │       └── main
-│   │           ├── java
-│   │           │   └── com/example/springaialibaba/envcheck
-│   │           │       ├── EnvironmentCheckApplication.java
-│   │           │       └── EnvironmentCheckController.java
-│   │           └── resources
-│   │               └── application.yml
-│   ├── 02-chatbot
-│   │   ├── README.md
-│   │   ├── pom.xml
-│   │   └── src
-│   │       └── main
-│   │           ├── java
-│   │           │   └── com/example/springaialibaba/chatbot
-│   │           │       ├── ChatbotApplication.java
-│   │           │       ├── ChatController.java
-│   │           │       └── DashScopeHttpClientConfiguration.java
-│   │           └── resources
-│   │               └── application.yml
-│   └── 03-streaming-chatbot
-│       ├── README.md
+├── demos/                    # 19 个可运行 Demo（01-env-check … 19-agent-platform）
+│   └── NN-xxx/
 │       ├── pom.xml
-│       └── src
-│           └── main
-│               ├── java
-│               │   └── com/example/springaialibaba/streamingchatbot
-│               │       ├── DashScopeHttpClientConfiguration.java
-│               │       ├── StreamingChatController.java
-│               │       └── StreamingChatbotApplication.java
-│               └── resources
-│                   └── application.yml
-├── learn
-│   ├── lessons
+│       └── src/main/{java,resources}
+├── learn/                    # 课程站点（静态 HTML）
+│   ├── index.html            # ★ 课程目录首页（从这里打开）
+│   ├── MISSION.md            # 课程使命 / 范围 / 约束
+│   ├── NOTES.md              # 教学笔记
+│   ├── RESOURCES.md          # 参考资料索引
+│   ├── assets/
+│   │   ├── course.css        # 课程正文样式
+│   │   ├── nav.css           # 侧边栏 + 上下节导航样式
+│   │   ├── nav.js            # 侧边栏目录树 + 上/下一节导航脚本
+│   │   └── quiz.js           # 课中思考卡片交互
+│   ├── lessons/              # 18 节课程正文（0001-… ~ 0018-….html）
 │   │   ├── 0001-from-environment-check-to-chatbot.html
-│   │   └── 0002-streaming-chatbot-sse.html
-│   └── reference
-│       ├── 0001-chatclient-quick-reference.html
-│       └── 0002-streaming-chatbot-sse-quick-reference.html
-└── notes
+│   │   ├── …
+│   │   └── 0018-agent-platform.html
+│   ├── reference/            # 18 张速查卡（和课程一一对应）
+│   │   ├── 0001-chatclient-quick-reference.html
+│   │   ├── …
+│   │   └── 0018-agent-platform-quick-reference.html
+│   └── learning-records/     # 学习记录
+└── notes/
     └── ai-agent-learning-roadmap.md
 ```
+
+> 课程站点内的任意页面都可通过左上角 **≡** 打开目录树跳转到其它课程/速查卡，页面底部有「← 上一节 / 🏠 / 下一节 →」线性导航，**不必手动记文件名**。
 
 ---
 

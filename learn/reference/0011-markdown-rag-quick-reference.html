@@ -1,25 +1,72 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RAG 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>RAG 快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Markdown RAG 快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>Markdown RAG 快速参考</h1>
+    <p class="small">对应第 0011 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>标准链路</h2>
-<pre><code>TextReader / PdfReader → List&lt;Document&gt;
-    → TokenTextSplitter(chunk, overlap)
-    → vectorStore.add(chunks)
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>SimpleVectorStore</code></td><td>内存向量库，教学用；生产换 PGVector/Milvus</td></tr>
+      <tr><td><code>TokenTextSplitter(chunkSize, overlap, ...)</code></td><td>按 token 切文本，默认 chunkSize=400,overlap=200</td></tr>
+      <tr><td><code>DashScopeEmbeddingModel</code></td><td>阿里云 text-embedding-v2 等 Embedding 实现</td></tr>
+      <tr><td><code>QuestionAnswerAdvisor</code></td><td>自动检索 topK 块塞进 Prompt</td></tr>
+      <tr><td><code>VectorStore.similaritySearch(SearchRequest)</code></td><td>手工检索，调试召回用</td></tr>
+      <tr><td><code>SearchRequest.query(q).withTopK(k).withSimilarityThreshold(t)</code></td><td>构建检索请求</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-SearchRequest.builder()
-    .query(q).topK(4).similarityThreshold(0.3).build();</code></pre></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>@Bean
+SimpleVectorStore vectorStore(EmbeddingModel em, Resource md) {
+  var store = SimpleVectorStore.builder(em).build();
+  var docs = new TextReader(md).get();
+  var chunks = new TokenTextSplitter(400,200,10,5000,true).split(docs);
+  store.add(chunks);
+  return store;
+}</code></pre>
+  </section>
 
-<section><h2>调参优先级</h2>
-<ol>
-<li>metadata 过滤（version / language / tenant）</li>
-<li>chunk 大小 &amp; overlap</li>
-<li>topK &amp; threshold</li>
-<li>换向量模型（最后手段）</li>
-</ol></section>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>SimpleVectorStore 重启丢数据，生产必须换持久化 VectorStore</li>
+      <li>embedding 模型维度固定，换 embedding 模型必须重建索引</li>
+      <li>QuestionAnswerAdvisor 有自己的 System Prompt，可能与你的 System 冲突（看 FAQ 配置）</li>
+      <li>相似性阈值 threshold 默认值不一定适合你的数据，要实验</li>
+      <li>TokenTextSplitter 对代码/表格/标题可能切得不好，考虑用 Markdown-aware splitter</li>
+      <li>多租户必须用 metadata 过滤（SearchRequest.withFilterExpression）</li>
+      <li>先调用 /retrieve 接口看召回再调 ask，区分"检索差"还是"生成差"</li>
+    </ul>
+    </div>
+  </section>
 
-<section><h2>System Prompt 建议</h2>
-<pre><code>只基于 context 回答；context 不足请说明；
-每条结论列出用到的 source 或 page。</code></pre></section>
-</main></body></html>
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会用 TokenTextSplitter 切文档吗？</li>
+      <li>会用 QuestionAnswerAdvisor 吗？</li>
+      <li>会用 SearchRequest 调 topK/threshold 吗？</li>
+      <li>为什么生产不用 SimpleVectorStore？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

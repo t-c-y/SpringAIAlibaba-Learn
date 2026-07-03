@@ -1,10 +1,44 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>企业级 Agent 平台原型</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业级 Agent 平台原型</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0018 · Spring AI Alibaba</div>
 <h1>企业级 Agent 平台原型：装配前 17 课的能力</h1>
 <p>本课目标：把 Agent 抽象化，把多 Agent 路由、限流、审计装配成可扩展骨架。</p>
 <p class="small">配套 Demo：<code>demos/19-agent-platform</code>。参考卡：<a href="../reference/0018-agent-platform-quick-reference.html">Agent 平台快速参考</a>。</p></header>
+
+<div class="callout">
+<p><strong>你今天要获得的一个能力：</strong>把前 17 课学到的 ChatClient、结构化输出、MCP、RAG、Function Calling、多 Agent 协作等能力，<strong>装进一个统一网关</strong>——对外只暴露 <code>POST /platform/ask</code>，对内由 <code>RequestGuard</code>（限流/鉴权）+ <code>AgentRouter</code>（按意图路由）+ <code>AuditLog</code>（调用审计）三件套完成路由。学完你能在自己公司里搭出一个最小可扩展的"Agent 中台原型"，理解生产环境 Agent 平台缺什么。</p>
+</div>
+
+<section><h2>平台网关三件套</h2>
+<p>从用户 HTTP 请求到拿到答案，统一经过三个横切组件：</p>
+<div class="grid">
+<div class="card"><h3>RequestGuard · 入口守护者</h3><p>按 <code>userId</code> 做鉴权 + 限流。教学版使用固定窗口计数（20 req/min/用户），生产替换为 Sentinel 令牌桶/熔断。超量返回 <code>429 Too Many Requests</code> 并带 <code>Retry-After</code>。</p></div>
+<div class="card"><h3>AgentRouter · 意图调度</h3><p>启动时把所有 <code>Agent</code> 实现注入 <code>List&lt;Agent&gt;</code>，用一个便宜的分类模型（如 <code>qwen-turbo</code>）根据用户问题选 Agent id；高频路径加关键词规则前置兜底。</p></div>
+<div class="card"><h3>AuditLog · 调用审计</h3><p>记录 <code>id/at/userId/agentId/latencyMs/question/answer</code>。教学版用 <code>ConcurrentLinkedDeque</code> + 容量上限避免内存泄漏；生产落库/Kafka，后续用于质量分析、badcase 回灌、计费对账。</p></div>
+</div>
+
+<pre><code>                ┌────────────────────────────────────────────────┐
+   HTTP POST    │  PlatformController.ask(userId, question)      │
+  /platform/ask │                                                │
+  ───────────►  │  1. RequestGuard.tryAcquire(userId)            │
+                │       │  超限 → 429 + Retry-After               │
+                │       ▼                                        │
+                │  2. AgentRouter.route(question) → Agent        │
+                │       │  未命中 → fallback Agent（小模型）      │
+                │       ▼                                        │
+                │  3. agent.handle(req) → AgentResponse          │
+                │       │  超时 → 熔断 + 降级回复                │
+                │       ▼                                        │
+                │  4. AuditLog.log(record) → 内存/DB/Kafka       │
+                │       ▼                                        │
+                │  return { success, routedAgent, latencyMs, answer }
+                └────────────────────────────────────────────────┘</code></pre>
+<p>为什么要三件套拆开？<strong>鉴权限流</strong>是平台级横切关注点，<strong>路由</strong>是策略点（新增 Agent 不改入口），<strong>审计</strong>是合规与改进数据源——任何一个替换都不影响另两个。</p>
+</section>
 
 <section><h2>架构</h2>
 <pre><code>HTTP Ingress
@@ -13,16 +47,178 @@
   ↓ Learning / CustomerService / Coding Agent
   ↓ 统一审计日志</code></pre></section>
 
-<section><h2>关键组件</h2>
+<section><h2>关键组件原理</h2>
+
+<h3>1. Agent 接口：统一抽象，所有能力一视同仁</h3>
+<p>小模型闲聊、FAQ 检索、RAG 问答、客服工单 Agent、代码生成 Agent，对外都只长一个样子。这是平台能"横向扩展"的根本：</p>
+<pre><code>public interface Agent {
+    String id();                              // 全局唯一 id，路由键
+    String description();                     // 供分类模型读的"能力说明"
+    AgentResponse handle(AgentRequest req);
+
+    record AgentRequest(String userId, String question) {}
+    record AgentResponse(String agentId, String answer, long latencyMs) {}
+}</code></pre>
+<p>有了统一接口，<strong>权限、审计、灰度、超时隔离</strong>全部可以挂在入口层做，每个 Agent 作者只关心自己的业务。新 Agent 上线 = 新增一个 <code>@Component</code> 实现类，<strong>零改动平台代码</strong>（Spring 自动注入 <code>List&lt;Agent&gt;</code>，启动时即注册）。</p>
+
+<h3>2. RequestGuard：令牌桶限流（教学版 vs 生产版）</h3>
+<p>Demo 用的是"每分钟固定窗口计数"（每分钟清 0，20 次上限），简单但有窗口边界突发问题。生产常用令牌桶：</p>
 <ul>
-<li><code>Agent</code>：接口抽象，每个 Agent 有 id / description / handle。</li>
-<li><code>AgentRouter</code>：用轻量分类模型选 Agent。</li>
-<li><code>RequestGuard</code>：教学限流，生产用 Sentinel。</li>
-<li>审计：把 request/response/latency 落盘。</li>
-</ul></section>
+<li><code>bucket capacity = 20</code>（桶容量，即允许瞬时突发）；</li>
+<li>每 <strong>3 秒补 1 个 token</strong>（60 / 20 = 3），匀速填充 = 稳态 20 req/min；</li>
+<li>请求来时先拿 token，拿不到直接返回 <code>429 Too Many Requests</code> + <code>Retry-After: N</code> 头；</li>
+<li>按 <code>userId</code> / <code>tenantId</code> / 全局 三级粒度分别配桶。</li>
+</ul>
+<pre><code>// 语义接口示意（生产用 Sentinel 注解即可）
+public record AccessCheck(boolean allowed, String reason, int retryAfterSec) {}
+
+public AccessCheck check(String userId) {
+    TokenBucket bucket = buckets.computeIfAbsent(userId,
+        k -> TokenBucket.of(capacity=20, refillPerSec=1.0/3));
+    if (bucket.tryConsume(1)) return new AccessCheck(true, "ok", 0);
+    return new AccessCheck(false, "rate_limited", bucket.secondsToNextToken());
+}</code></pre>
+<p class="small">Demo 里的固定窗口 20 次/分钟 <strong>只是教学</strong>：它会在"0 秒 20 次 + 61 秒瞬间又 20 次"的边界上放过 40 次。Sentinel/Resilience4j 的 Guava RateLimiter 风格令牌桶才能正确削峰。</p>
+
+<h3>3. AgentRouter：分类模型做意图识别</h3>
+<p>构造函数里把所有 Agent 的 <code>id + description</code> 拼进 system prompt，调用一个便宜模型（推荐 <code>qwen-turbo</code>）让它只输出一个 Agent id。这比自己写关键词表<strong>可扩展但不可控</strong>，推荐三层结构：</p>
+<ol>
+<li><strong>规则前置</strong>：正则/关键词命中（如"我的订单号"→客服）直接路由，不烧模型钱；</li>
+<li><strong>模型分类</strong>：兜底用小模型，输出 <code>agentId</code>；要求模型同时输出置信度，低于阈值走 fallback；</li>
+<li><strong>Embedding 检索</strong>：把每个 Agent 的 description/示例问题向量化，用户问题向量做 top-K 检索（Agent 数量多、描述长时用）。</li>
+</ol>
+<p>冷启动注册靠 Spring 依赖注入：<code>new AgentRouter(builder, List&lt;Agent&gt; agents)</code> 自动收集所有 <code>@Component Agent</code> 实现，<strong>无需手工注册</strong>。</p>
+
+<h3>4. AuditLog：为什么必须存 question+answer</h3>
+<p>只存调用元数据（谁用了什么 Agent、耗时多少）不够做质量闭环。必须记录：</p>
+<table>
+<thead><tr><th>字段</th><th>作用</th><th>生产注意</th></tr></thead>
+<tbody>
+<tr><td><code>id / at</code></td><td>主键、时间戳</td><td>雪花 ID + UTC，便于分库分表</td></tr>
+<tr><td><code>userId / tenantId</code></td><td>用户/租户维度分析</td><td>租户隔离分区（索引要带 tenantId）</td></tr>
+<tr><td><code>agentId / modelName</code></td><td>看哪个 Agent/模型被调</td><td>计费、模型升级对比用</td></tr>
+<tr><td><code>latencyMs / status</code></td><td>SLA 监控</td><td>接 Prometheus 做 P95/P99</td></tr>
+<tr><td><code>question / answer</code></td><td>badcase 回灌、人工标注、安全审计</td><td><strong>PII 脱敏</strong>（手机号/身份证/银行卡），合规留存周期</td></tr>
+</tbody>
+</table>
+<p>Demo 用 <code>ConcurrentLinkedDeque&lt;AuditRecord&gt;</code> + <code>MAX_SIZE=1000</code> 防止内存爆掉；生产换 Kafka + 落 OSS/ClickHouse，既不阻塞请求线程又能做离线分析。</p>
+</section>
+
+<section><h2>核心 API 代码</h2>
+<p>下面是平台 Controller 主流程的最小可运行版（Demo 中同名类即为完整实现，此处抽出核心骨架方便理解）：</p>
+<pre><code>@RestController
+@RequestMapping("/platform")
+public class PlatformController {
+
+    private final RequestGuard guard;
+    private final AgentRouter router;
+    private final AuditLog audit;
+
+    public PlatformController(RequestGuard g, AgentRouter r, AuditLog a) {
+        this.guard = g; this.router = r; this.audit = a;
+    }
+
+    @PostMapping("/ask")
+    public ResponseEntity&lt;?&gt; ask(@RequestHeader("X-User-Id") String userId,
+                                 @RequestBody Map&lt;String,String&gt; body) {
+        // 1) 限流
+        if (!guard.tryAcquire(userId)) {
+            return ResponseEntity.status(429)
+                .header("Retry-After", "60")
+                .body(Map.of("error","rate_limited"));
+        }
+        String question = body.get("question");
+        long start = System.currentTimeMillis();
+
+        // 2) 路由 + 3) 执行
+        Agent agent = router.route(question);             // 选 Agent
+        Agent.AgentResponse resp = agent.handle(          // 执行业务
+            new Agent.AgentRequest(userId, question));
+
+        // 4) 审计
+        audit.log(new AuditLog.Record(UUID.randomUUID().toString(),
+            Instant.now(), userId, agent.id(), question,
+            resp.answer(), System.currentTimeMillis() - start));
+
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "routedAgent", agent.id(),
+            "latencyMs", resp.latencyMs(),
+            "answer", resp.answer()));
+    }
+}</code></pre>
+<p class="small">新 Agent 接入只需要：<code>@Component class XxxAgent implements Agent { public String id(){return "xxx";} ... }</code>，路由、限流、审计自动生效——这就是"平台"的价值。</p>
+</section>
+
+<section><h2>关键参数与配置</h2>
+<div class="grid">
+<div class="card"><h3>限流阈值</h3>
+<p><code>PER_MINUTE_LIMIT = 20</code>（每用户每分钟）。<br>调参时机：上线压测后按 QPS 配额、模型 TPM（token/min）反推；VIP 租户单独抬升。</p></div>
+<div class="card"><h3>分类模型选择</h3>
+<p>路由用便宜模型（<code>qwen-turbo</code> / <code>qwen-plus</code> 即可）。<br>仅输出 1 个 Agent id，token 消耗极低，成本 &lt; 业务调用的 1%。</p></div>
+<div class="card"><h3>审计队列容量</h3>
+<p>Demo <code>MAX_SIZE = 1000</code>（内存 deque 上限）。<br>生产关闭内存上限，改异步落库/Kafka；设置 <code>queue-capacity</code> 背压。</p></div>
+<div class="card"><h3>超时隔离</h3>
+<p>Demo 未显式设超时。<br>生产每个 Agent 必须配置独立 <code>ChatClient</code> 超时（如 30s）+ 线程池隔离，避免慢 Agent 拖垮整个平台。</p></div>
+</div>
+<table>
+<thead><tr><th>配置项</th><th>默认值（Demo）</th><th>生产建议</th></tr></thead>
+<tbody>
+<tr><td><code>spring.ai.dashscope.chat.options.model</code>（路由分类）</td><td>与业务同模型</td><td>固定为 <code>qwen-turbo</code> 节省成本</td></tr>
+<tr><td><code>RequestGuard.PER_MINUTE_LIMIT</code></td><td>20</td><td>按用户等级/租户套餐差异化</td></tr>
+<tr><td>AuditLog 存储</td><td>内存 ConcurrentLinkedDeque</td><td>Kafka → ClickHouse / OSS，保留 90~180 天</td></tr>
+<tr><td>Agent 超时</td><td>未设（HTTP 默认）</td><td>Resilience4j timeLimiter，每个 Agent 独立线程池</td></tr>
+<tr><td>路由 fallback</td><td>硬编码 learning Agent</td><td>独立 fallback Agent（通用小模型 + 拒答策略）</td></tr>
+</tbody>
+</table>
+</section>
+
+<div class="callout warning">
+<p><strong>边界与常见坑</strong></p>
+<ol>
+<li><strong>限流窗口边界爆量</strong>：Demo 用"按分钟清 0"的固定窗口，在窗口交界会放过 2 倍流量。生产换 Sentinel 令牌桶或滑动窗口；全局、租户、用户三级配限额。</li>
+<li><strong>一个慢 Agent 拖垮整个平台</strong>：所有 Agent 共用默认 Tomcat 线程池，RAG/慢查询 Agent 会吃满线程。必须给每个 Agent 独立线程池 + <code>@TimeLimiter</code> 超时熔断，超时走降级话术。</li>
+<li><strong>审计日志 PII 泄漏</strong>：直接存 question/answer 很可能落手机号、身份证、地址。上线前必须加 PII 脱敏正则/模型，日志存储加密，按合规要求设留存周期（如金融 6 个月、教育 1 年）。</li>
+<li><strong>路由误判 = 用户体验事故</strong>：分类模型不是 100% 准确，一定要有 fallback Agent + 低置信度兜底规则；监控"路由→最终点赞/点踩"指标持续调优，误路由率 &gt; 5% 就要加规则或微调分类器。</li>
+<li><strong>用户 prompt 没做安全过滤</strong>：平台入口必须做涉黄/涉政/暴力/Prompt 注入检测（阿里云绿网 + 百炼内容安全），否则用户一条注入就能拿到内部 Agent 的 system prompt 甚至打到下游工具。</li>
+<li><strong>没有 metrics 等于裸奔</strong>：必须打指标——总请求量、429 数、5xx 数、各 Agent 调用占比、P50/P95/P99 延迟、路由到 fallback 比例。接 Micrometer + Prometheus + Grafana。</li>
+<li><strong>灰度发布缺失</strong>：新 Agent 直接 100% 流量风险大。入口层加按 userId 哈希/白名单的灰度规则，新 Agent 先接 5% 流量观察。</li>
+</ol>
+</div>
+
+<section><h2>生产集成方向</h2>
+<div class="grid">
+<div class="card"><h3>限流熔断 → Alibaba Sentinel</h3><p>替换 RequestGuard：QPS 限流、热点参数限流（按 userId/tenantId）、熔断降级、集群限流流控，Dashboard 实时推规则。</p></div>
+<div class="card"><h3>动态配置 → Nacos</h3><p>Agent 清单、路由规则、限流阈值、模型切换全部走 Nacos 配置中心热更新，不重启生效。</p></div>
+<div class="card"><h3>认证鉴权 → Spring Security</h3><p>接 OAuth2 / JWT，<code>X-User-Id</code> 从 token 解析而非前端传；不同租户可访问的 Agent 清单做 RBAC 过滤。</p></div>
+<div class="card"><h3>多租户隔离</h3><p>三层隔离：① 租户维度 Agent 清单；② 租户独立限流配额；③ 审计日志按租户分区；④ 模型 API Key 按租户计费。</p></div>
+<div class="card"><h3>可观测 → 百炼 Tongyi-Insight</h3><p>接入阿里云百炼的 Trace/Tracing 能力，看每个 Agent 的 token 消耗、链路耗时、用户反馈评分。</p></div>
+<div class="card"><h3>网关入口 → Spring Cloud Gateway</h3><p>把 /platform/** 放到 SCG，统一做鉴权、限流、日志染色、灰度路由；后面挂多个 Agent 平台实例。</p></div>
+</div>
+</section>
 
 <section><h2>成本设计</h2>
-<div class="callout"><p><strong>路由用便宜模型，业务用贵模型。</strong> 分类只需要 1~2 个字符输出，用便宜模型省成本。</p></div></section>
+
+<section><h2>成本设计</h2>
+<div class="callout"><p><strong>路由用便宜模型，业务用贵模型。</strong> 分类只需要 1~2 个字符输出，用便宜模型省成本。</p></div>
+<p>成本分层的典型占比（按一次请求）：</p>
+<ul>
+<li>路由分类：<code>qwen-turbo</code>，输入 ~100 token、输出 ~5 token，&lt; ￥0.0001/次；</li>
+<li>业务 Agent：根据任务用 <code>qwen-plus</code> / <code>qwen-max</code>，输入 1k~10k token、输出 500~2k token，￥0.01~0.2/次；</li>
+<li>Embedding/RAG：<code>text-embedding-vX</code>，均摊到每次约 ￥0.001；</li>
+<li>即路由成本占比 &lt; 1%，但能节省"把闲聊问题误路由给 qwen-max"的浪费，<strong>路由层是最大的成本 ROI 点</strong>。</li>
+</ul>
+</section>
+
+<section><h2>主资料</h2>
+<ul>
+<li><a href="https://java2ai.com" target="_blank" rel="noopener">Java2AI · Spring AI Alibaba 中文教程与示例</a> — 社区维护的中文落地教程。</li>
+<li><a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">alibaba/spring-ai-alibaba GitHub 仓库</a> — Agent、Graph、MCP 等组件源码与 example。</li>
+<li><a href="https://docs.spring.io/spring-ai/reference/" target="_blank" rel="noopener">Spring AI Reference Documentation</a> — ChatClient、Advisor、Observability 官方文档。</li>
+<li><a href="https://help.aliyun.com/zh/model-studio/" target="_blank" rel="noopener">阿里云百炼（模型服务灵积）文档中心</a> — 模型选择、限流、内容安全、Tongyi-Insight 可观测。</li>
+</ul>
+<p class="small">扩展阅读：Spring Cloud Gateway、Alibaba Sentinel、Spring Security OAuth2 Resource Server、Resilience4j TimeLimiter/Bulkhead。</p>
+</section>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -67,5 +263,10 @@ curl "http://localhost:8098/platform/audit?n=5"</code></pre>
 <div class="quiz-options"><button data-option="A">路由</button><button data-option="B">审计</button><button data-option="C">灰度发布</button></div><p class="quiz-feedback small"></p></div>
 </section>
 
-<section><h2>课后问答</h2><ul><li>"如何做多租户？"</li><li>"模型主备切换怎么实现？"</li></ul></section>
+<section><h2>课后问答</h2><ul>
+<li><strong>如何做多租户？</strong> — 在入口层解析 JWT 拿到 tenantId，AgentRouter 按租户过滤可见 Agent，RequestGuard 按 (tenantId, userId) 二级限流，AuditLog 按 tenantId 分区落库；Nacos 下发租户级配置。</li>
+<li><strong>模型主备切换怎么实现？</strong> — 在 Agent 内部包一层 <code>ChatClient</code> 代理：主模型（如 qwen-max）超时/报错时 fallback 到备模型（如 qwen-plus），并在 AuditLog 标 <code>fallback=true</code> 上报；同时接 Sentinel 熔断，连续失败 N 次自动切流到备模型 30s。</li>
+<li><strong>新 Agent 如何安全上线？</strong> — 三步走：① 注册后默认不进路由（Nacos 开关灰度）；② 按白名单 userId 或 5% 流量哈希灰度；③ 对比灰度组与对照组的"回答点踩率/平均延迟/token 成本"，指标不差再全量；回滚开关随时可切。</li>
+</ul></section>
+</section>
 </main></body></html>

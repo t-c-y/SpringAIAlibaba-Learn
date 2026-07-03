@@ -1,25 +1,68 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Memory 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>ChatMemory 快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatMemory 快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>ChatMemory 快速参考</h1>
+    <p class="small">对应第 0006 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>关键组件</h2>
-<div class="grid">
-<div class="card"><h3>ChatMemory</h3><p>存储抽象；InMemoryChatMemory 是教学版，生产建议 Redis / DB。</p></div>
-<div class="card"><h3>Advisor</h3><p>MessageChatMemoryAdvisor 负责读写记忆。</p></div>
-</div></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>MessageChatMemoryAdvisor</code></td><td>把 ChatMemory 接入 ChatClient 的 Advisor</td></tr>
+      <tr><td><code>MessageWindowChatMemory</code></td><td>滑窗记忆，只保留最近 K 轮对话</td></tr>
+      <tr><td><code>InMemoryChatMemory</code></td><td>全量内存记忆（不推荐生产）</td></tr>
+      <tr><td><code>chat_memory_conversation_id</code></td><td>Advisor param，会话隔离 ID，必须从登录态取</td></tr>
+      <tr><td><code>chat_memory_response_size</code></td><td>保留最近多少条 exchange（一问一答算一个 exchange）</td></tr>
+      <tr><td><code>JdbcChatMemory / RedisChatMemory</code></td><td>生产用持久化实现（Spring AI 提供）</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>关键参数</h2>
-<ul>
-<li><code>CHAT_MEMORY_CONVERSATION_ID_KEY</code>：会话标识，必须由服务端计算，不允许前端裸传。</li>
-<li><code>CHAT_MEMORY_RETRIEVE_SIZE_KEY</code>：每轮取回历史消息数上限，防上下文爆炸。</li>
-</ul></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>this.chatClient = chatClientBuilder
+    .defaultAdvisors(MessageChatMemoryAdvisor.builder(memory).build())
+    .build();
+// 调用时传 advisor param
+spec.param("chat_memory_conversation_id", userId);</code></pre>
+  </section>
 
-<section><h2>生产扩展方向</h2>
-<ul>
-<li>Redis-backed ChatMemory：多实例共享，加 TTL。</li>
-<li>Token 上限：超过阈值触发摘要（summarize）压缩。</li>
-<li>PII 脱敏：写入前对手机号、身份证等做 masking。</li>
-<li>可审计：记忆需要能被合规团队检索到。</li>
-</ul></section>
-</main></body></html>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>conversationId 必须来自登录态不能让前端传任意值（否则能读别人会话）</li>
+      <li>窗口大小默认 20 太大占 token；FAQ 类 bot 用 5-10 足够</li>
+      <li>InMemoryChatMemory 重启丢数据，生产换 JDBC/Redis</li>
+      <li>敏感信息（手机号/身份证/密码）要在记忆里脱敏或不存</li>
+      <li>并发写同一 conversationId 要加锁</li>
+      <li>记忆满要做"会话摘要"而非粗暴清空（长对话场景）</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会用 MessageWindowChatMemory 配置滑窗吗？</li>
+      <li>知道 conversationId 从哪里来吗？</li>
+      <li>生产为什么不用 InMemoryChatMemory？</li>
+      <li>知道窗口大小的 trade-off 吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

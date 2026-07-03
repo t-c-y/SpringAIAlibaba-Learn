@@ -1,23 +1,171 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>结构化 JSON 输出</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>结构化 JSON 输出</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0004 · Spring AI Alibaba</div>
 <h1>结构化 JSON 输出：告别"手动 parse LLM 文本"</h1>
 <p>本课目标：会用 <code>.entity(Class)</code> 让模型返回可直接反序列化的 Java 对象或集合。</p>
 <p class="small">配套 Demo：<code>demos/05-structured-output</code>。参考卡片：<a href="../reference/0004-structured-output-quick-reference.html">结构化输出快速参考</a>。</p>
 </header>
 
-<section><h2>核心 API</h2>
-<pre><code>LessonOutline o = chatClient.prompt()
-    .user("请生成一份课程大纲")
-    .call()
-    .entity(LessonOutline.class);
+<section>
+<h2>你今天要获得的一个能力</h2>
+<div class="callout">
+<p><strong>能力目标：</strong>面对"把 LLM 自由文本转成业务可用对象"的需求，能用 <code>ChatClient.entity()</code> + Java <code>record</code> 一次性搞定 schema 注入、模型约束、反序列化；并能解释 <code>BeanOutputConverter</code> 内部链路，定位"JSON 解析失败"的三类典型问题。</p>
+</div>
+<p>你在写 Java 业务接口时最怕的不是调用模型，而是模型返回的那段文本不稳定：有时带解释、有时带 <code>```json</code> 包裹、字段名会漂移。本节课解决的就是这件事——让模型"必须"按你声明的类型说话，且结果直接落到 Java 对象里。</p>
+</section>
 
-List&lt;Checkpoint&gt; list = chatClient.prompt()
-    .user("生成 5 条检查点")
-    .call()
-    .entity(new ParameterizedTypeReference&lt;List&lt;Checkpoint&gt;&gt;() {});</code></pre>
-<p><code>.entity()</code> 内部做了：<strong>类型 → JSON Schema → 拼进 Prompt → BeanOutputConverter 反序列化</strong>。</p>
+<section>
+<h2>原理：BeanOutputConverter 如何让模型返回 JSON</h2>
+<p>很多同学以为 <code>.entity(Class)</code> 是"拿到字符串后用 Jackson 反序列化"，这只说对了一半。真正的关键在于——<strong>在发给模型之前</strong>，Spring AI 已经把你 Java 类型翻译成了 JSON Schema，并塞进了 System Prompt，模型是"照着 Schema 填写"的，不是自由发挥后再硬 parse。</p>
+
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│ 1. 你声明 record LessonOutline(String title, String summary …) │
+└────────────────────────────────┬────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. BeanOutputConverter 反射 record → 生成 JSON Schema            │
+│    (字段名/类型/必填/description 都在 Schema 里)                  │
+└────────────────────────────────┬────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. Schema 作为特殊指令拼进 System Prompt:                        │
+│    "Your response should be in JSON format …  schema: {…}"     │
+└────────────────────────────────┬────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 4. 模型(qwen-plus / qwen3.7-plus 等)按 Schema 生成 JSON 文本       │
+│    (支持 structured output 的模型会严格遵守 key/类型)             │
+└────────────────────────────────┬────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 5. BeanOutputConverter 从响应文本里抽取 JSON → Jackson 反序列化   │
+│    直接落到 LessonOutline / List&lt;Checkpoint&gt; 实例                  │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+
+<p>为什么要把 Schema 注入 Prompt？因为大模型本质上是在"下一个 token 预测"，只有当它在生成的每一步都"看到"Schema 约束，才不会在输出中凭空加字段、换字段名、混入自然语言解释。支持"结构化输出 / JSON Mode"的模型（如 Qwen-Plus、Qwen3 系列、GPT-4o 等）会在服务端再做一次强约束，效果更好；不支持的模型则仅靠 Prompt 引导，稳定性差一些。</p>
+
+<p>这也解释了两件事：(1) <strong>字段名和类型必须在 Java 侧写清楚</strong>——它们就是 Schema 的来源；(2) <strong>temperature 必须低</strong>——温度高时采样空间大，模型更容易"改写"key 名或加多余字段，即便有 Schema 约束也会漏。百炼平台的 qwen3.7-plus、qwen-plus 对 JSON Schema 支持度较好，结构化输出稳定性是经过生产验证的。</p>
+</section>
+
+<section>
+<h2>核心 API 与 record 写法</h2>
+<p>先把两个 record 写对——字段名、类型、<code>@JsonPropertyDescription</code> 注解都会直接映射到 JSON Schema 的 <code>properties</code> 与 <code>description</code>，从而影响模型输出质量。</p>
+
+<pre><code>import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import java.util.List;
+
+/** 课程大纲：嵌套一个 Checkpoint 列表 */
+public record LessonOutline(
+    @JsonPropertyDescription("课程标题，不超过 20 字")
+    String title,
+
+    @JsonPropertyDescription("一段中文摘要，80-120 字，说明本课讲什么、学完能做什么")
+    String summary,
+
+    @JsonPropertyDescription("本课分几节，每节一个简短标题")
+    List&lt;String&gt; sections,
+
+    @JsonPropertyDescription("难度等级：beginner / intermediate / advanced 三者之一")
+    String difficulty
+) {}
+
+/** 检查点：用于 List&lt;Checkpoint&gt; 场景 */
+public record Checkpoint(
+    @JsonPropertyDescription("检查点序号，从 1 开始")
+    Integer id,
+
+    @JsonPropertyDescription("一句话描述学员应该已经掌握什么")
+    String description,
+
+    @JsonPropertyDescription("学员自检方式：提问/命令/代码片段任选其一")
+    String verifyMethod
+) {}</code></pre>
+
+<p>Controller 里的调用非常薄：</p>
+<pre><code>@RestController
+@RequestMapping("/struct")
+@RequiredArgsConstructor
+public class StructController {
+
+    private final ChatClient chatClient;
+
+    /** 返回单个对象 */
+    @PostMapping("/lesson")
+    public LessonOutline lesson(@RequestBody TopicRequest req) {
+        return chatClient.prompt()
+            .user(u -&gt; u.text("请围绕主题生成一份课程大纲，主题：{topic}")
+                        .param("topic", req.topic()))
+            // temperature 设低，是结构化输出的配套；也可在 defaultOptions 全局设
+            .options(DashScopeChatOptions.builder()
+                    .withTemperature(0.1f)
+                    .build())
+            .call()
+            .entity(LessonOutline.class);
+    }
+
+    /** 返回集合必须用 ParameterizedTypeReference 保留泛型 */
+    @PostMapping("/checkpoints")
+    public List&lt;Checkpoint&gt; checkpoints(@RequestBody TopicRequest req) {
+        return chatClient.prompt()
+            .user(u -&gt; u.text("围绕主题生成 5 条学习检查点，主题：{topic}")
+                        .param("topic", req.topic()))
+            .call()
+            .entity(new ParameterizedTypeReference&lt;&gt;() {});
+    }
+
+    public record TopicRequest(String topic) {}
+}</code></pre>
+<p>注意：<code>ParameterizedTypeReference</code> 是 Spring 核心里就有的泛型令牌（<code>org.springframework.core.ParameterizedTypeReference</code>），和 <code>RestTemplate.exchange</code> 里保留泛型是同一个套路——Java 类型擦除后 List 的泛型信息靠它传下来，才能生成正确的"数组 of Checkpoint"Schema。</p>
+</section>
+
+<section>
+<h2>什么时候用 Class、什么时候用 ParameterizedTypeReference、什么时候嵌套</h2>
+<p>三种返回结构对应三种写法，别搞混：</p>
+<table>
+<thead><tr><th>想要的返回</th><th>写法</th><th>Schema 形态</th><th>常见坑</th></tr></thead>
+<tbody>
+<tr><td>单个对象 <code>LessonOutline</code></td><td><code>.entity(LessonOutline.class)</code></td><td><code>{type:object, properties:{…}}</code></td><td>字段必须是具体类型，不能是 <code>Object</code></td></tr>
+<tr><td>同类型集合 <code>List&lt;Checkpoint&gt;</code></td><td><code>.entity(new ParameterizedTypeReference&lt;List&lt;Checkpoint&gt;&gt;(){})</code></td><td><code>{type:array, items:{…Checkpoint…}}</code></td><td>漏写泛型令牌会导致 Jackson 反序列化成 <code>List&lt;LinkedHashMap&gt;</code></td></tr>
+<tr><td>嵌套对象（如 <code>LessonOutline</code> 内含 <code>List&lt;Checkpoint&gt;</code>）</td><td>字段直接声明成 record/List 类型，仍传 <code>.entity(LessonOutline.class)</code></td><td>Schema 里该字段是 <code>{type:array, items:{…Checkpoint…}}</code></td><td>内层 record 也要有 <code>@JsonPropertyDescription</code>，否则模型对内层字段描述不足</td></tr>
+<tr><td>异构集合（如"可能是 A 也可能是 B"）</td><td>用一个包装 record + 一个 <code>String type</code> 判别字段（示意）</td><td><code>oneOf/anyOf</code>（需 Spring AI 版本支持）</td><td>Spring AI 当前版本对 oneOf 支持有限，建议用"type 判别字段 + 业务分支"替代</td></tr>
+</tbody>
+</table>
+</section>
+
+<section>
+<h2>关键参数与配置</h2>
+<div class="grid">
+<div class="card"><h3>temperature（温度）</h3>
+<p><strong>建议值：0.0 ~ 0.1</strong>，默认按全局 ChatOptions 通常是 0.7 或更高。结构化输出必须调低，否则 key 名漂移率显著上升。</p></div>
+<div class="card"><h3>model（模型）</h3>
+<p><strong>建议：qwen-plus / qwen3-plus 系列</strong>。这类模型在服务端支持 JSON 模式或结构化输出约束，不建议在结构化输出场景使用不支持 JSON Mode 的弱模型。</p></div>
+<div class="card"><h3>@JsonPropertyDescription</h3>
+<p><strong>强烈建议每个字段都加</strong>。它会变成 Schema 里字段的 <code>description</code>，是模型理解"这个字段该填什么"的唯一中文提示——比你在 user prompt 里重复写更稳定。</p></div>
+<div class="card"><h3>maxTokens</h3>
+<p>嵌套层级多、字段多时适当调大（如 1024 → 2048），否则输出被截断会导致 JSON 不完整、Jackson 直接抛 <code>JsonParseException</code>。</p></div>
+</div>
+<p class="small">这些参数既可在 <code>application.yml</code> 的 <code>spring.ai.dashscope.chat.options.*</code> 做全局默认，也可在单次调用 <code>.options(DashScopeChatOptions.builder()…)</code> 覆盖。结构化输出接口建议全局默认 temperature=0.1，避免每次都写。</p>
+</section>
+
+<section>
+<h2>边界与常见坑</h2>
+<div class="callout warning">
+<p><strong>坑 1：模型输出被 <code>```json … ```</code> 包裹，直接 <code>JsonParseException</code>。</strong></p>
+<p>典型报错：<code>com.fasterxml.jackson.core.JsonParseException: Unexpected character ('`' (code 96)): Expected space separating root-level values</code>。原因：模型没严格遵守"只输出 JSON"指令，加上了 markdown 代码块。<strong>解决：</strong>在 System Prompt 中显式追加"不要使用 markdown 代码块包裹，不要输出任何解释性文字，直接输出 JSON"；或升级到支持 JSON Mode 的模型（如 qwen-plus）在服务端做硬约束。<code>BeanOutputConverter</code> 本身对简单的 <code>```json</code> 前缀有一定容错，但不要依赖它。</p>
+
+<p><strong>坑 2：字段缺失 / 类型错误，Jackson 抛 <code>MismatchedInputException</code>。</strong></p>
+<p>典型报错：<code>Cannot deserialize value of type `int` from String "N/A"</code> 或某个字段为 <code>null</code>而你业务没判空。原因两类：(a) temperature 偏高、模型在自由发挥；(b) record 字段类型太"严"但 description 没写清（比如模型把"id"输出成"第1条"）。<strong>解决：</strong>temperature 降到 0.1 以下；字段用包装类型（<code>Integer</code> 而非 <code>int</code>）以便处理缺省；为每个字段补 <code>@JsonPropertyDescription</code> 指明类型与取值范围。</p>
+
+<p><strong>坑 3：幻觉字段——模型输出了你没声明过的 key。</strong></p>
+<p>现象：JSON 里多出 <code>"extraComment": "…"</code>、<code>"source": "…"</code> 之类的字段，Jackson 默认会忽略（不报错），但下游逻辑如果遍历 key 可能踩坑。原因：user prompt 里没明确"只输出这些字段，不要额外加信息"，模型为了"有帮助"会主动加解释字段。<strong>解决：</strong>在 System Prompt 明确"必须严格按 schema 返回，禁止添加任何未声明字段"；同时在 Jackson 侧配置 <code>DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES</code> 为 false（Spring AI 默认行为），或者在关键业务上主动打开该开关以便及早发现漂移。</p>
+
+<p><strong>坑 4（Bonus）：List 裸传 Class 丢泛型。</strong></p>
+<p><code>.entity(List.class)</code> 会得到 <code>List&lt;LinkedHashMap&gt;</code>，强转 <code>List&lt;Checkpoint&gt;</code> 会在运行时 <code>ClassCastException</code>。务必用 <code>new ParameterizedTypeReference&lt;List&lt;Checkpoint&gt;&gt;() {}</code>。</p>
+</div>
 </section>
 
 <section><h2>Java 侧配合要点</h2>
@@ -78,6 +226,22 @@ curl -X POST http://localhost:8084/struct/raw -H 'Content-Type: application/json
 <div class="quiz-options"><button data-option="A">0.7</button><button data-option="B">0.1 或更低</button><button data-option="C">1.0</button></div><p class="quiz-feedback small">选一个。</p></div>
 </section>
 
+<section>
+<h2>主资料</h2>
+<ul>
+<li><a href="https://docs.spring.io/spring-ai/reference/api/structured-output.html">Spring AI 官方文档：Structured Output（结构化输出）</a>：<code>BeanOutputConverter</code>、<code>MapOutputConverter</code>、<code>ListOutputConverter</code> 以及 <code>.entity()</code> 的规范用法，本节原理与 API 对齐此文档。</li>
+<li><a href="https://java2ai.com/docs/1.0.0.2/tutorials/structuredoutput/">Spring AI Alibaba 结构化输出教程（java2ai.com）</a>：中文示例、Qwen 模型下的使用建议与版本注意事项。</li>
+<li><a href="https://help.aliyun.com/zh/model-studio/user-guide/json-mode">百炼 DashScope：JSON 模式 / 结构化输出使用指南</a>：qwen-plus / qwen3 系列 JSON Mode 的服务端约束能力、请求参数、限制与最佳实践。</li>
+<li><a href="https://github.com/alibaba/spring-ai-alibaba/tree/main/community/engine-starters/spring-ai-alibaba-starter-dashscope">spring-ai-alibaba-starter-dashscope（GitHub）</a>：查 <code>DashScopeChatModel</code>、<code>DashScopeChatOptions</code> 如何把 Spring AI 通用结构化输出指令映射到 DashScope 请求体。</li>
+</ul>
+</section>
+
 <section><h2>课后问答</h2>
-<ul><li>"如果模型返回的 JSON 缺字段，.entity() 会怎么表现？"</li><li>"能不能让模型返回嵌套结构？"</li><li>"下一课学 Prompt 模板文件。"</li></ul></section>
+<p>你可以直接问我：</p>
+<ul>
+<li>"如果模型返回的 JSON 缺字段或多字段，<code>.entity()</code> 会怎么表现？怎么把 Jackson 配成严格模式？"</li>
+<li>"能不能让模型返回嵌套结构（大纲里套检查点数组）？内层 record 要不要也加 <code>@JsonPropertyDescription</code>？"</li>
+<li>"如果想要返回 <code>Map&lt;String,Object&gt;</code> 或异构列表，BeanOutputConverter 还够用吗？需要切到 <code>StructuredOutputConverter</code> 自定义吗？"</li>
+<li>"下一课学 Prompt 模板文件——把 System / User 模板放到 <code>resources/prompts</code> 下管理。"</li>
+</ul></section>
 </main></body></html>

@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
+<meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>从环境检查到最小 ChatBot</title>
   <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">
   <script src="../assets/quiz.js" defer></script>
-</head>
+  <script src="../assets/nav.js" defer></script></head>
 <body>
 <main>
   <header>
@@ -56,6 +57,30 @@ DashScope / 百炼模型服务</code></pre>
   </section>
 
   <section>
+    <h2>自动配置魔法：ChatClient.Builder 哪来的</h2>
+    <p>在 Demo 的 Controller 里你看到的是构造器注入一个 <code>ChatClient.Builder</code>，但整个项目没有任何 <code>@Bean</code> 方法去 new 它。这不是黑魔法，是 Spring Boot Starter 的标准自动装配。</p>
+
+    <pre><code>你的 pom.xml 引入 spring-ai-alibaba-starter-dashscope
+        │
+        ▼
+Spring Boot 启动时扫描 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
+        │
+        ▼
+加载 DashScopeAutoConfiguration（Spring AI Alibaba 提供）
+        │
+        ├─ 根据 spring.ai.dashscope.api-key 创建 DashScopeChatModel（ChatModel 实现）
+        ├─ 根据 spring.ai.dashscope.chat.options 创建默认 ChatOptions（model、temperature 等）
+        └─ 把 ChatModel 包装成一个 ChatClient.Builder Bean 放进容器
+        │
+        ▼
+你的 Controller 构造器参数 ChatClient.Builder 被自动注入</code></pre>
+
+    <p>为什么不自己 <code>new ChatClient(...)</code>？因为 <code>ChatClient.Builder</code> 已经持有了全局的 <code>ChatModel</code>、默认 <code>ChatOptions</code>、<code>ObservationRegistry</code>（可观测性）、<code>MessageConverter</code> 等基础设施。自己 new 等于绕开 Starter 的全部默认装配，一旦要切模型、加观测、改超时，就得自己维护这些 Bean——企业项目里这几乎总是错的。</p>
+
+    <p>换句话说，<code>spring-ai-alibaba-starter-dashscope</code> 干的事和 <code>spring-boot-starter-jdbc</code> 干的事是同一类：用约定替代样板代码，把厂商 SDK 的初始化、错误映射、配置绑定都收敛到自动配置里。你只管注入、调用。</p>
+  </section>
+
+  <section>
     <h2>核心代码只看四步</h2>
     <pre><code>String answer = chatClient.prompt()
         .user(request.question())
@@ -86,6 +111,138 @@ DashScope / 百炼模型服务</code></pre>
   </section>
 
   <section>
+    <h2>异常与错误返回：三种典型失败，为什么要先调 /env/ping</h2>
+    <p>大模型调用失败的表现和你熟悉的数据库连接失败很不一样——它不是启动时就报错，而是第一次调用时才抛异常。下面是企业项目里最常见的三种失败模式：</p>
+
+    <table>
+      <thead>
+        <tr><th>失败原因</th><th>典型异常 / 返回</th><th>何时暴露</th><th>排查手段</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>API Key 错误 / 未配置</td>
+          <td><code>401 Unauthorized</code> 或 DashScope SDK 抛认证异常，消息里含 "Invalid API key" / "Unathorized"</td>
+          <td>第一次真正调用模型时（<code>/env/ping</code> 或 <code>/chat/ask</code>）</td>
+          <td>先调 <code>/env/status</code> 确认 <code>apiKeyConfigured=true</code>，再调 <code>/env/ping</code></td>
+        </tr>
+        <tr>
+          <td>模型名写错 / 账号无权访问</td>
+          <td><code>400 Bad Request</code> 或 <code>404 ModelNotExist</code>，消息含 "model not exist" / "permission denied"</td>
+          <td>第一次调用模型时</td>
+          <td>去百炼控制台核对模型 ID（如 <code>qwen-plus</code>、<code>qwen-turbo</code>），确认已开通</td>
+        </tr>
+        <tr>
+          <td>网络超时 / 限流</td>
+          <td><code>ReadTimeoutException</code> 或 HTTP <code>429 Too Many Requests</code>，<code>5xx</code></td>
+          <td>业务高峰期或弱网环境下偶发</td>
+          <td>配置超时时间与重试；查看 DashScope 控制台配额与 QPS</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>这就是为什么 Demo 里要先提供 <code>/env/ping</code>——<code>/env/status</code> 只读本地配置，不发 HTTP，能证明「Key 变量存在」但不能证明「Key 有效、网络通、模型名正确」。<code>/env/ping</code> 才是真正的烟雾测试（smoke test），它以最小代价（一次 1-token 调用）打通整条链路。企业项目在 K8s 就绪探针、CI 部署后校验都应该复用这个模式。</p>
+  </section>
+
+  <section>
+    <h2>核心 API 完整示例</h2>
+    <p>下面是 Demo 02 中 <code>ChatController</code> 的关键骨架，包含构造器注入、默认 System Prompt、同步调用、请求记录、响应封装，可直接作为你自己项目的起点：</p>
+
+    <pre><code>@RestController
+@RequestMapping("/chat")
+public class ChatController {
+
+    private final ChatClient chatClient;
+
+    // ChatClient.Builder 由 Starter 自动装配注入，无需 @Bean
+    public ChatController(ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder
+                .defaultSystem("你是一个企业级 Java 后端开发学习助手，"
+                        + "回答要简洁、代码优先、不编造不存在的 API。")
+                .build();
+    }
+
+    @GetMapping("/status")
+    public Map&lt;String, Object&gt; status() {
+        // 读本地配置即可，不调用模型
+        return Map.of(
+                "model", chatClient.getChatOptions().getModel(),
+                "apiKeyConfigured", StringUtils.hasText(
+                        DashScopeApiKeyUtils.getConfiguredApiKey())
+        );
+    }
+
+    @PostMapping("/ask")
+    public ChatResponse ask(@RequestBody ChatRequest request) {
+        String answer = chatClient.prompt()
+                .user(request.question())    // 用户问题
+                .call()                      // 同步调用，阻塞等待
+                .content();                  // 取文本回答（抛异常时此处会冒泡）
+        return new ChatResponse(true, "qwen3.7-plus",
+                request.question(), answer);
+    }
+
+    // 生产环境建议在此加 @ExceptionHandler，把 DashScope 异常
+    // 转成稳定的业务错误码返回给前端，而不是暴露 500 原始栈
+}
+</code></pre>
+  </section>
+
+  <section>
+    <h2>关键配置项</h2>
+    <p>Demo 里用了 <code>${DASHSCOPE_CHAT_MODEL:qwen3.7-plus}</code> 这种写法。它是 Spring 占位符语法：先读环境变量 / 系统属性 <code>DASHSCOPE_CHAT_MODEL</code>，读不到就用冒号后的默认值 <code>qwen3.7-plus</code>。企业里通常用环境变量（容器、K8s ConfigMap/Secret、CI）覆盖默认值，本地开发则用默认值直接跑。</p>
+
+    <table>
+      <thead>
+        <tr><th>配置项（application.yml）</th><th>环境变量占位符写法</th><th>默认值</th><th>什么时候需要调</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>spring.ai.dashscope.api-key</code></td>
+          <td><code>${DASHSCOPE_API_KEY}</code></td>
+          <td>无（必填）</td>
+          <td>必填。生产走 Secret / 配置中心，不要写进 yml</td>
+        </tr>
+        <tr>
+          <td><code>spring.ai.dashscope.chat.options.model</code></td>
+          <td><code>${DASHSCOPE_CHAT_MODEL:qwen-plus}</code></td>
+          <td><code>qwen-plus</code></td>
+          <td>要切更强模型（qwen-max）、更快更便宜模型（qwen-turbo）或多模态时改</td>
+        </tr>
+        <tr>
+          <td><code>spring.ai.dashscope.chat.options.temperature</code></td>
+          <td>通常写死，不注入环境变量</td>
+          <td>0.7（以 Starter 默认为准）</td>
+          <td>0 适合事实回答/代码生成；接近 1 适合创意写作。企业场景常见 0~0.3</td>
+        </tr>
+        <tr>
+          <td><code>spring.ai.dashscope.base-url</code></td>
+          <td><code>${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/api/v1}</code></td>
+          <td>官方地址</td>
+          <td>走代理、VPC 专线或私有化部署时改</td>
+        </tr>
+        <tr>
+          <td>连接/读超时</td>
+          <td>Spring WebClient / RestClient 超时配置（示意）</td>
+          <td>Spring 默认</td>
+          <td>大模型 P99 高，建议读超时 ≥ 30s；流式可更长</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="small">提示：所有 <code>spring.ai.dashscope.*</code> 的配置都由 <code>DashScopeAutoConfiguration</code> 在启动时绑定。你可以在 <code>application.yml</code> 里写默认值，但生产环境敏感项（api-key）必须通过 Secret / 环境变量注入，不要提交进 Git。</p>
+  </section>
+
+  <section>
+    <h2>边界与常见坑</h2>
+    <div class="callout warning">
+      <p><strong>坑 1：API Key 硬编码进 yml 并提交到仓库。</strong>最常见也最致命。团队越大、仓库越公开，泄露面越大。统一用环境变量 + <code>.gitignore</code> 掉本地 <code>application-local.yml</code>，生产用云厂商 Secret / KMS / 配置中心加密字段。</p>
+      <p><strong>坑 2：把 <code>call()</code> 放在事务里或接口主线程里不设超时。</strong>大模型 P99 延迟可达数秒到十几秒，而 Spring 事务默认超时通常较短；不加超时会导致 HTTP 线程池被打满、事务长占连接。建议：同步接口设置读超时；高并发场景用 <code>stream()</code> 或异步。</p>
+      <p><strong>坑 3：以为 <code>/env/status</code> 显示 <code>apiKeyConfigured=true</code> 就万事大吉。</strong>它只检查了本地变量是否存在，不校验 Key 有效性、余额、模型权限、网络连通性。部署后第一次验证必须调一次 <code>/env/ping</code>（或等价的最小模型调用），否则就是「配置看起来对但模型调不通」的黑盒状态。</p>
+      <p><strong>坑 4：把默认 System Prompt 当成安全边界。</strong><code>defaultSystem</code> 只是给模型的偏好提示，不是权限系统。用户通过 prompt injection 可能绕过。真正的权限控制必须在 Controller / Service 层用代码判断，不要把安全交给 prompt。</p>
+    </div>
+  </section>
+
+  <section>
     <h2>动手练习：运行第二个 Demo</h2>
     <div class="practice">
       <ol>
@@ -110,10 +267,12 @@ DashScope / 百炼模型服务</code></pre>
 # 预期：{"success":true,"content":"OK","model":"qwen3.7-plus"}</code></pre></li>
     </ol></div>
     <h4>⚡ 3 条命令快速验证 01-environment-check</h4>
-    <pre><code># 1) 环境状态检查
+    <pre><code># 1) 环境状态检查（API Key/模型是否就绪）
 curl http://localhost:8080/env/status
-# 2) 模型连通性
-curl http://localhost:8080/env/ping</code></pre>
+# 2) 模型连通性（默认 message=ping）
+curl http://localhost:8080/env/ping
+# 3) 自定义问题验证模型确实在回答
+curl 'http://localhost:8080/env/ping?message=请只回答：Spring-AI-Alibaba-OK'</code></pre>
     <h3>🔹 <code>02-chatbot</code>（端口 8081）</h3>
     <p>启动：<code>cd demos/02-chatbot &amp;&amp; mvn spring-boot:run</code></p>
     <div class="practice"><ol>
@@ -125,12 +284,16 @@ curl http://localhost:8080/env/ping</code></pre>
 # 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
     </ol></div>
     <h4>⚡ 3 条命令快速验证 02-chatbot</h4>
-    <pre><code># 1) 状态
+    <pre><code># 1) 状态检查
 curl http://localhost:8081/chat/status
-# 2) 提问
+# 2) 简单提问
 curl -X POST http://localhost:8081/chat/ask \
   -H 'Content-Type: application/json' \
-  -d '{"question":"用一句话介绍 Spring AI Alibaba"}'</code></pre>
+  -d '{"question":"用一句话介绍 Spring AI Alibaba"}'
+# 3) 稍微复杂的问题，观察模型按 defaultSystem 的风格回答
+curl -X POST http://localhost:8081/chat/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"列出企业项目接入大模型时最容易踩的 3 个坑"}'</code></pre>
   </section>
 
   <section>
@@ -169,8 +332,13 @@ curl -X POST http://localhost:8081/chat/ask \
 
   <section>
     <h2>主资料</h2>
-    <p>建议本课后阅读：<a href="https://java2ai.com/docs/1.0.0.2/get-started/chatbot/">Spring AI Alibaba ChatBot 入门文档</a>。它是后续课程对齐官方写法的主要依据。</p>
-    <p>如果你对 <code>ChatClient</code> 抽象想看更底层的来源，也可以查阅 <a href="https://docs.spring.io/spring-ai/reference/">Spring AI 官方参考文档</a>。</p>
+    <ul>
+      <li><a href="https://java2ai.com/">Spring AI Alibaba 官方站（java2ai.com）</a>：中文快速开始、示例与版本发布公告，是本课程官方写法的主要依据。</li>
+      <li><a href="https://java2ai.com/docs/1.0.0.2/get-started/chatbot/">ChatBot 入门文档</a>：本节 Demo 对齐的官方最小 ChatBot 教程。</li>
+      <li><a href="https://github.com/alibaba/spring-ai-alibaba/tree/main/community/engine-starters/spring-ai-alibaba-starter-dashscope">spring-ai-alibaba-starter-dashscope（GitHub）</a>：看自动配置类 <code>DashScopeAutoConfiguration</code>、属性绑定类、ChatModel 实现源码的第一入口。</li>
+      <li><a href="https://help.aliyun.com/zh/model-studio/getting-started/first-api-call-to-qwen">百炼 DashScope 模型服务·首次调用指南</a>：API Key 申请、模型列表、调用示例与错误码参考。Key 在这里申请。</li>
+      <li><a href="https://docs.spring.io/spring-ai/reference/">Spring AI 官方参考文档</a>：<code>ChatClient</code>、<code>ChatModel</code> 抽象层的权威来源，跨厂商通用。</li>
+    </ul>
   </section>
 
   <section>

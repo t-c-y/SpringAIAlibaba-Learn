@@ -1,25 +1,174 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MCP 工具集成</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP 工具集成</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0016 · Spring AI Alibaba</div>
 <h1>MCP 工具集成：跨进程工具的动态发现</h1>
 <p>本课目标：理解 MCP 思想——工具通过标准协议**动态发现与调用**，而不是在编译期用 @Tool 注册。</p>
 <p class="small">配套 Demo：<code>demos/17-mcp-integration</code>。参考卡：<a href="../reference/0016-mcp-quick-reference.html">MCP 快速参考</a>。</p></header>
 
-<section><h2>MCP 是什么</h2>
+<div class="callout">
+<p><strong>你今天要获得的一个能力：</strong>把 Tool Calling 从单进程 <code>@Tool</code> 方法，扩展为<strong>跨进程、跨语言、可动态发现</strong>的 MCP 工具服务——任何团队用任何语言写的能力，只要实现 MCP 协议，就能被你的 Spring AI Agent 像本地 <code>@Tool</code> 一样直接调用。</p>
+</div>
+
+<section><h2>MCP 协议基础</h2>
+<p><strong>MCP（Model Context Protocol）</strong> 是由 Anthropic 发起、现在多家厂商共同推动的开放协议，目标是让"给 LLM 接工具/上下文"这件事从各自私有 SDK，变成像 HTTP 一样的标准。</p>
+<p>MCP 消息层使用 <strong>JSON-RPC 2.0</strong>（request/response/notification 三类消息），传输层支持三种：</p>
+<table>
+<thead><tr><th>传输方式</th><th>适用场景</th><th>特点</th></tr></thead>
+<tbody>
+<tr><td><code>stdio</code></td><td>本地子进程（如本地 IDE 插件、CLI 工具）</td><td>Client fork 子进程，通过 stdin/stdout 走 JSON-RPC；零端口、零网络</td></tr>
+<tr><td><code>SSE</code></td><td>远程 HTTP 服务</td><td>Server 推流，Client 用 POST 发请求、SSE 接响应；长连接</td></tr>
+<tr><td><code>Streamable HTTP</code></td><td>远程 HTTP 服务（新版）</td><td>在普通 HTTP 上支持流式响应，比 SSE 更易过网关/负载均衡</td></tr>
+</tbody>
+</table>
+<p>MCP 暴露两类核心能力：</p>
 <ul>
-<li>Model Context Protocol：让工具方以标准协议对外暴露能力。</li>
-<li>Agent 侧：先 list_tools 拉清单，再按 name + args 调用。</li>
-<li>好处：跨进程、跨语言，能像"应用商店"一样加载工具。</li>
-</ul></section>
+<li><strong>Tools</strong>（函数调用）：Server 声明一组可被 LLM 调用的工具，带 <code>inputSchema</code>（JSON Schema）；和你在 demo 09/10/11 用的 <code>@Tool</code> 语义等价，但跨进程。</li>
+<li><strong>Resources</strong>（上下文资源）：暴露可被 LLM 读取的资源（本地文件、数据库、API 返回的结构化数据），用 URI 寻址，类似"给模型一个只读文件系统"。</li>
+</ul>
+<p class="small">本课只讲 <strong>Tools</strong>；Resources 留到后续课程的 RAG/知识库场景再讲。</p>
+</section>
 
-<section><h2>教学取舍</h2>
-<div class="callout"><p>本课用 REST 模拟 MCP 协议：<code>GET /mcp/tools</code> 拉清单、<code>POST /mcp/call</code> 调工具。真实 MCP 是 JSON-RPC over stdio / SSE，语义完全一致。</p></div></section>
+<section><h2>MCP vs Function Calling：从单进程到跨服务</h2>
+<table>
+<thead><tr><th>维度</th><th>Function Calling（<code>@Tool</code>）</th><th>MCP Tools</th></tr></thead>
+<tbody>
+<tr><td>调用方式</td><td>同 JVM 内反射调用 <code>@Tool</code> 方法</td><td>Client/Server 架构，走 JSON-RPC over stdio/SSE/HTTP</td></tr>
+<tr><td>部署边界</td><td>工具代码必须和 Agent 在一个进程里</td><td>跨进程、跨机器、跨语言（Python/Go/Node 写的工具都能调）</td></tr>
+<tr><td>注册方式</td><td>编译期/启动期 <code>@Tool</code> 扫描</td><td>运行期 <code>listTools()</code> 动态发现，Server 可热插拔</td></tr>
+<tr><td>复用粒度</td><td>每个 Agent 自己配一套</td><td>一个 MCP Server 可被多个 Agent/应用同时复用</td></tr>
+<tr><td>安全/治理</td><td>JVM 内方法，靠代码规范</td><td>跨网络，必须做认证、鉴权、超时、熔断、审计</td></tr>
+<tr><td>LLM 侧语义</td><td colspan="2"><strong>完全相同</strong>——模型都只是看到"工具名 + 描述 + inputSchema"，然后决定调不调、传什么参数</td></tr>
+</tbody>
+</table>
+<p>一句话总结：<strong>MCP 把 Tool Calling 从"本地方法调用"变成了"标准化的 RPC 调用"</strong>，LLM 看不到区别，但工程边界被彻底打开了。</p>
+</section>
 
-<section><h2>核心流程</h2>
-<pre><code>Agent 启动 → listTools → 拼进 System Prompt
-用户提问 → LLM 输出 {"tool":..., "args":...} 或 {"final":...}
-Agent 解析 → 调 MCP Server → 返回结果 → 再交给 LLM → 循环 N 次</code></pre></section>
+<section><h2>两段式工具交互：list → call</h2>
+<p>MCP Tools 的核心只有两个动作，理解这两步就理解了整个协议。</p>
+<pre><code> ┌─────────┐                                  ┌─────────────┐
+ │  Agent  │                                  │ MCP Server  │
+ │ (Client)│                                  │  (Tools)    │
+ └────┬────┘                                  └──────┬──────┘
+      │  1) tools/list                              │
+      │  ─────────────────────────────────────────► │
+      │                                             │  扫描本地/远程
+      │                                             │  所有已注册工具
+      │  2) [{name,description,inputSchema}, ...]   │
+      │  ◄───────────────────────────────────────── │
+      │                                             │
+      │  (Agent 把工具清单拼进 System Prompt，       │
+      │   交给 LLM 决策；每轮都可能触发调用)          │
+      │                                             │
+      │  3) tools/call {name, arguments}            │
+      │  ─────────────────────────────────────────► │
+      │                                             │  执行真实逻辑
+      │                                             │  (读文件/查库/调API)
+      │  4) {content: [...], isError: bool}         │
+      │  ◄───────────────────────────────────────── │
+      │                                             │
+      │  (把结果回填给 LLM → 继续推理 → 要么再调工具，│
+      │   要么输出 final answer)                     │
+      └─────────────────────────────────────────────┘</code></pre>
+<ol>
+<li><strong>listTools()</strong>：Agent 启动时（或按需）向 Server 请求工具清单，Server 返回每个工具的 <code>name</code>、<code>description</code>、<code>inputSchema</code>（JSON Schema）——这三项就是 LLM 决定是否调用它的全部依据。</li>
+<li><strong>callTool(name, args)</strong>：LLM 在推理中决定调用某个工具，Agent 把工具名 + 参数发给 Server，Server 执行真实逻辑（读文件、查数据库、调外部 API……）并把结构化结果返回。</li>
+<li><strong>循环</strong>：调用结果回填给 LLM，LLM 判断"还需要调别的工具吗"，需要则继续 callTool，不需要则输出最终答案。这个 loop 和 demo 09/10/11 的 in-process Tool Calling 完全同构，只是"工具执行"这一步从本地反射变成了 RPC。</li>
+</ol>
+</section>
+
+<section><h2>教学取舍：MockMcpServer 说明</h2>
+<div class="callout">
+<p>本课 Demo 使用一个教学版 REST 模拟——<strong>MockMcpServer</strong>：</p>
+<ul>
+<li><code>GET /mcp/tools</code> 返回工具清单（对应 <code>tools/list</code>）</li>
+<li><code>POST /mcp/call</code> 按 <code>toolName + arguments</code> 分发执行（对应 <code>tools/call</code>）</li>
+</ul>
+<p>真实 MCP 是 <strong>JSON-RPC 2.0 over stdio/SSE/Streamable HTTP</strong>，消息格式不是 REST JSON 而是 JSON-RPC（带 <code>id</code>/<code>method</code>/<code>params</code>）。但<strong>交互语义完全一致</strong>：list 拉清单看 schema → call 按名传参 → 循环直到 final answer。先用 REST 版把这三个动作看透，再切真实 MCP SDK 时你只需要换传输层。</p>
+</div>
+</section>
+
+<section><h2>核心代码：McpAgentController 的 Agent Loop</h2>
+<p>Demo 的 <code>McpAgentController</code> 自己手写了一个最小 ReAct loop——这能让你看清 Agent 到底在循环什么（而不是被框架魔法遮住）。</p>
+<pre><code>// 伪代码：Demo 中 McpAgentService 的核心循环
+List&lt;ToolSpec&gt; tools = mcpClient.listTools();           // ① 启动时拉工具清单
+String systemPrompt = buildSystemPrompt(tools);         // ② 把 name/description/inputSchema 拼进 Prompt
+List&lt;Message&gt; messages = new ArrayList&lt;&gt;();
+messages.add(systemPrompt);
+messages.add(new UserMessage(question));
+
+for (int step = 0; step &lt; MAX_STEPS; step++) {          // ③ 最多 N 步，防止死循环
+    ChatResponse resp = chatClient.prompt(messages).call().chatResponse();
+    String text = resp.getResult().getOutput().getText();
+
+    if (isFinalAnswer(text)) {                          // ④ LLM 认为可以答了 → 输出
+        return parseFinal(text);
+    }
+    ToolCall call = parseToolCall(text);                // ⑤ 否则解析出 toolName + args
+    ToolResult result = mcpClient.call(call.name(), call.args()); // ⑥ 调 MCP Server
+    messages.add(new AssistantMessage(text));
+    messages.add(new ToolResultMessage(result));        // ⑦ 结果回填 → 继续下一轮
+}
+throw new IllegalStateException("超过最大步数");</code></pre>
+<p>这其实就是 <strong>LangChain ReAct Agent 的最小内核</strong>：<em>Thought → Action → Observation → Thought → ... → Answer</em>。区别只是 Action 阶段调的不是本地反射，而是跨进程的 MCP 调用。生产环境你不会手写这个 loop，而是直接把 MCP 工具注册进 <code>ChatClient</code>，由 Spring AI 框架替你循环；但先看懂手写版，出了问题你才知道 loop 卡在哪一步。</p>
+</section>
+
+<section><h2>未来 Spring AI Alibaba 的 McpClient 使用方式（概念）</h2>
+<p>Spring AI 官方已提供 <code>spring-ai-mcp-client</code> 模块，Spring AI Alibaba 也会对齐这一套。一旦用官方 SDK，你就不用自己写 REST 调 <code>/mcp/tools</code> 和 <code>/mcp/call</code>，代码会和用 <code>@Tool</code> 几乎一样：</p>
+<pre><code>// 概念代码：以官方 spring-ai-mcp-client 发布的 API 形态为准
+// 1) 指定传输方式连到 MCP Server（本地子进程 / 远程 SSE）
+McpTransport transport = new SseMcpTransport("https://mcp.internal.com/sse");
+// 或 stdio：new StdioMcpTransport("npx", List.of("-y", "@some/mcp-server"));
+
+McpClient mcpClient = McpClient.create(transport);
+mcpClient.connect();
+
+// 2) 把 MCP Server 暴露的工具直接塞进 ChatClient，和 @Tool 同等地位
+List&lt;ToolCallback&gt; mcpTools = mcpClient.listToolCallbacks();
+
+ChatClient chatClient = chatClientBuilder
+    .defaultTools(mcpTools)            // 就像 .defaultTools(new MyLocalTools())
+    .build();
+
+// 3) 正常调用，框架自动完成 list → 多轮 call → final answer
+String answer = chatClient.prompt("帮我查一下库存并下单").call().content();</code></pre>
+<p>注意三点：(a) <code>listToolCallbacks()</code> 把 MCP 工具适配成了 Spring AI 标准的 <code>ToolCallback</code>，所以你可以和本地 <code>@Tool</code> 方法<strong>混着注册</strong>；(b) 多轮 loop 由框架自动执行，你只要在 builder 里配置 <code>maxToolCalls</code> 等参数；(c) transport 切换对上层完全透明——今天连本地 stdio，明天换远程 SSE，业务代码零改动。</p>
+</section>
+
+<section><h2>关键参数与配置</h2>
+<div class="grid">
+<div class="card"><h3>Agent 最大轮次 <code>max-steps</code></h3><p>默认：Demo 中 <code>MAX_STEPS=10</code>。生产视场景设 5-20。过低会让复杂任务中途被切，过高会烧 token + 卡延迟。必须有，否则模型钻牛角尖会无限循环。</p></div>
+<div class="card"><h3>MCP 调用超时 <code>call-timeout</code></h3><p>默认：无（依赖 HTTP/RPC 默认）。<strong>一定要显式设</strong>（HTTP 客户端 connect/read timeout、未来 SDK 的 <code>requestTimeout</code>）。外部工具卡 30s 会把整个 Agent 链路拖死。</p></div>
+<div class="card"><h3>工具过滤 <code>tool-filter</code></h3><p>默认：listTools 全量注册。企业里一个 MCP Server 可能暴露 50+ 工具，全塞 Prompt 会让模型注意力稀释 + token 爆炸。按业务场景/用户角色做白名单过滤。</p></div>
+<div class="card"><h3>MCP Server 地址 <code>transport</code></h3><p>Demo：<code>http://localhost:8096</code>（REST 模拟）。生产通过配置中心下发，支持 stdio（本地子进程命令）、SSE URL、Streamable HTTP URL。建议用环境变量区分 dev/staging/prod。</p></div>
+<div class="card"><h3>认证 <code>auth</code></h3><p>默认：无（本地/内网）。跨网络必须带——API Key 放 Header、或 JWT/OAuth2。<code>spring-ai-mcp-client</code> 支持通过 <code>ClientRequestObservationConvention</code> / 自定义 interceptor 注入。</p></div>
+<div class="card"><h3>模型温度 <code>temperature</code></h3><p>Agent 场景建议 <strong>0–0.3</strong>。工具调用参数对格式敏感（JSON、枚举、数字），温度高了会出幻觉参数，MCP Server 侧要做参数校验兜底。</p></div>
+</div>
+</section>
+
+<section><h2>边界与常见坑</h2>
+<div class="callout warning">
+<ol>
+<li><strong>MCP Server 绝不能信任 Client 传的任意参数。</strong>和本地 <code>@Tool</code> 一样，所有 string/number/enum 入参必须在 Server 侧按业务规则校验（长度、范围、权限），不能因为"是 Agent 传的"就放松。跨网络尤其要防注入——SQL、命令、路径穿越都要过滤。</li>
+<li><strong>工具清单过大会让 Prompt 爆炸。</strong>每个工具的 description + inputSchema 都会拼进 System Prompt。一个 Server 暴露 100 个工具是灾难——token 成本飙升、模型选错工具概率大增。必须按场景分组，或在 Client 侧做"先做工具路由，再加载工具集"的两层发现。</li>
+<li><strong>跨网络调用必须设超时/重试/熔断/审计。</strong>本地 <code>@Tool</code> 失败只是抛异常；远程 MCP 失败会带来网络分区、慢响应、雪崩。给每个工具调用设独立超时（建议 3-10s）、有限重试（仅幂等工具）、熔断（连续失败快速降级），并把每一次 call 的 (toolName, argsHash, caller, latency, ok) 落审计日志。</li>
+<li><strong>工具 schema 要版本化。</strong>MCP 工具的 <code>name</code>/<code>inputSchema</code> 是 LLM 决策的依据，改了参数就等于改了"Prompt 契约"。建议加版本（<code>search_docs_v2</code>）或在 Server 端做 schema 向后兼容，老 Agent 不会突然挂。</li>
+<li><strong>必须做权限认证与租户隔离。</strong>MCP Server 一旦暴露到网络，就等于你的内部能力"上架应用商店"。至少要有 API Key/JWT，按 caller 做工具级 ACL（不是所有 Agent 都能调"删库""转账"类工具），多租户场景还要在参数层注入 tenantId，不能让 Agent 自己传。</li>
+</ol>
+</div>
+</section>
+
+<section><h2>主资料</h2>
+<ul>
+<li>MCP 官方规范与文档：<a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">modelcontextprotocol.io</a>——协议规范、传输层、Tools/Resources/Prompts 三类能力的权威定义。</li>
+<li>Anthropic 官方发布文：<a href="https://www.anthropic.com/news/model-context-protocol" target="_blank" rel="noopener">Introducing the Model Context Protocol</a>——MCP 为什么被提出、设计哲学与生态全景。</li>
+<li>Spring AI 官方 MCP 模块：<a href="https://docs.spring.io/spring-ai/reference/api/mcp/mcp-overview.html" target="_blank" rel="noopener">Spring AI MCP Overview</a>——<code>spring-ai-mcp-client</code>/<code>spring-ai-mcp-server</code> 用法、transport 配置、与 <code>ChatClient</code> 的集成方式。</li>
+<li>Spring AI Alibaba 示例仓库：<a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba</a>——MCP 与阿里云模型结合的社区示例与最佳实践。</li>
+</ul>
+</section>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -65,5 +214,11 @@ curl -X POST http://localhost:8096/mcp-agent/ask -H 'Content-Type: application/j
 <div class="quiz-options"><button data-option="A">无需限制</button><button data-option="B">最多 N 轮，明确终止条件</button><button data-option="C">让模型自由决定</button></div><p class="quiz-feedback small"></p></div>
 </section>
 
-<section><h2>课后问答</h2><ul><li>"如何把内部服务包成 MCP Server？"</li><li>"Agent 端如何审计和限速？"</li></ul></section>
+<section><h2>课后问答</h2>
+<ul>
+<li>"如何把公司内部一个已有的 REST 服务（比如库存查询系统）包成 MCP Server 给 Agent 用？最少要实现哪几个 JSON-RPC 方法？"</li>
+<li>"MCP 工具跨网络调用时，Agent 端怎么做超时、重试、熔断、全链路审计？和普通 RPC 治理有什么异同？"</li>
+<li>"本地 <code>@Tool</code> 和远程 MCP 工具可以混在同一个 ChatClient 里吗？如果两个工具同名（比如都叫 <code>search</code>）会发生什么，怎么规避？"</li>
+</ul>
+</section>
 </main></body></html>

@@ -1,10 +1,17 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>智能客服 Agent 综合</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智能客服 Agent 综合</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0014 · Spring AI Alibaba</div>
 <h1>智能客服 Agent：Memory + RAG + Tool 三合一</h1>
 <p>本课目标：把前面学的三大能力合到一个 Agent 上，理解 Advisor 顺序和"读工具/写工具"的分层。</p>
 <p class="small">配套 Demo：<code>demos/15-customer-service-agent</code>。参考卡：<a href="../reference/0014-customer-service-agent-quick-reference.html">综合 Agent 快速参考</a>。</p></header>
+
+<div class="callout">
+<p><strong>你今天要获得的一个能力：</strong>搭建一个把<em>会话记忆（Memory）</em>、<em>知识检索（RAG）</em>、<em>工具调用（Tool）</em>三者编排在一起的客服 Agent。这是你接触的第一个"真正意义上的 Agent"——它不再只靠一个能力回答，而是先读历史、再查政策、再调业务接口，最后才给用户答复。上完这节课，你能说清 Advisor 链的顺序为什么不能乱、用户身份如何安全注入、以及哪些动作必须走人工审批。</p>
+</div>
 
 <section><h2>数据流</h2>
 <pre><code>用户消息
@@ -15,12 +22,181 @@
   ↓ 生成回答
   ↓ 记忆写回</code></pre></section>
 
+<section><h2>原理机制：Advisor 链顺序为什么重要</h2>
+<p>Spring AI 的 Advisor 是一层层包裹 <code>ChatClient.call()</code> 的拦截器，和 Servlet Filter 的思路完全一致——<strong>谁先注册谁先处理入站消息、谁最后处理出站响应</strong>。在客服 Agent 里，顺序不是"好看"的问题，顺序错了功能就错。</p>
+<pre><code>                入站方向 (before)                        出站方向 (after)
+   ┌──────────────────────────────────────┐            ┌───────────────────┐
+   │  ① MessageChatMemoryAdvisor         │            │  写回记忆          │
+   │     - 把历史会话拼进 Prompt           │            │  - 保存本轮问答     │
+   ├──────────────────────────────────────┤            ├───────────────────┤
+   │  ② QuestionAnswerAdvisor (RAG)      │            │  (无出站动作)      │
+   │     - 用"当前问题+历史"检索政策       │            │                   │
+   │     - 把召回段落注入 System Prompt   │            │                   │
+   ├──────────────────────────────────────┤            ├───────────────────┤
+   │  ③ UserContextAdvisor (身份)        │            │  (无出站动作)      │
+   │     - 从 ThreadLocal 取 userId       │            │                   │
+   │     - 注入 "当前用户：u001"          │            │                   │
+   ├──────────────────────────────────────┤            ├───────────────────┤
+   │  ④ 模型 + ToolCallback (LLM 决策)   │──────────→ │  ④' Tool 返回结果  │
+   │     - 模型看完整 Prompt 决定          │            │      交回模型重写   │
+   │       要不要调 CustomerServiceTools  │            │      最终自然语言   │
+   └──────────────────────────────────────┘            └───────────────────┘</code></pre>
+
+<p><strong>为什么 Memory 必须在最前面。</strong>RAG 做向量检索时需要"完整语义"——用户上一轮问"我买的东西发货了吗"，这一轮只说"那能退吗"，没有历史就会把"退"检索到退货政策而不是针对订单的退款规则。先注入历史，后续的 RAG 才能用"上下文问题"去检索。</p>
+
+<p><strong>为什么 RAG 在 Tool 之前。</strong>模型决定调不调工具，依赖的是已经拼好政策知识的 Prompt。如果 Tool 先执行（例如先退款了），RAG 才告诉模型"该商品签收超过 7 天不能退"，那已经晚了——动作已经发生。正确顺序是：模型看到政策后再决定调什么工具、传什么参数。</p>
+
+<p><strong>为什么 UserContext 要在 RAG 和 Tool 之间（或更早）。</strong>Tool 里的 <code>listMyOrders()</code>、<code>requestRefund()</code> 都需要当前 userId；这个值必须由服务端从 <code>X-User-Id</code> Header 注入，绝不能让模型从对话里"猜"或由用户在 prompt 里伪造。身份注入后，后续所有 Tool 调用都能从 ThreadLocal 安全读到 userId。</p>
+
+<p><strong>顺序错的典型后果</strong>：RAG→Memory 时，检索只用当前单句导致召回不准；Tool 在 RAG 前可能先动作后查政策；身份放最后会让 Tool 拿不到 userId 直接抛 NPE。</p>
+</section>
+
 <section><h2>关键设计</h2>
 <ul>
 <li>知识库放"政策类"内容（退款/物流/保修）。</li>
 <li>业务动作走 Tool，Tool 内做权限校验。</li>
 <li>写操作（退款）返回 pending，明确告知"等人工审核"。</li>
 </ul></section>
+
+<section><h2>核心 API/代码</h2>
+
+<h3>1. ChatClient 装配：Memory → RAG → Tool 顺序</h3>
+<pre><code>// CustomerServiceController.java（节选）
+ChatMemory memory = MessageWindowChatMemory.builder().build(); // 默认保留最近 20 条
+
+this.chatClient = builder
+    .defaultSystem("""
+        你是一名电商智能客服，规则：
+        1. 涉及订单具体信息，必须调用工具 listMyOrders / getOrder / requestRefund；不要凭空回答。
+        2. 涉及退款政策 / 售后规则等非订单具体信息，参考知识库 context。
+        3. 一旦调用 requestRefund，最终回答必须明确"退款申请已提交，等待人工确认"，不要承诺已成功退款。
+        4. 传入工具的 currentUserId 只能来自会话上下文（服务端会通过 System 补充信息告知）。
+        5. 全程中文，先给结论再给依据。
+        """)
+    .defaultAdvisors(
+        MessageChatMemoryAdvisor.builder(memory).build(),   // ① 记忆最先
+        QuestionAnswerAdvisor.builder(vectorStore)          // ② RAG 次之
+            .searchRequest(SearchRequest.builder().topK(4).similarityThreshold(0.3d).build())
+            .build())
+    .defaultTools(tools)                                    // ③ 工具最后，由模型决策调用
+    .build();</code></pre>
+
+<h3>2. X-User-Id 如何进入 System Prompt</h3>
+<p>本 demo 采用"把 userId 拼进 user 文本"的最简做法——Controller 从 Header 拿到 <code>X-User-Id</code> 后，在调用前拼接：</p>
+<pre><code>@PostMapping("/cs/ask")
+public Object ask(@RequestHeader("X-User-Id") String userId,
+                  @RequestBody AskRequest req) {
+    String cid = req.conversationId() == null ? userId + "-default" : req.conversationId();
+
+    // 服务端注入 userId，模型会按 System Prompt 的要求把它作为 currentUserId 传给 Tool
+    String user = "【会话上下文】当前登录用户 id 是 " + userId
+                + "，如需调用工具请把它作为 currentUserId 参数传入。\n\n用户问题："
+                + req.question();
+
+    return chatClient.prompt()
+        .user(user)
+        .advisors(a -> a.param("chat_memory_conversation_id", cid)) // 记忆按 cid 隔离
+        .call().content();
+}</code></pre>
+<p class="small">更推荐的生产做法：自定义一个 <code>UserContextAdvisor</code>（实现 <code>BaseChatMemoryAdvisor</code> 或 <code>CallAdvisor</code>），从 <code>ThreadLocal</code> 取出 userId 后写入 System Prompt 或 advisor param；Controller 用 Filter/Interceptor 在请求入口把 userId set 到 ThreadLocal，出口 remove。这样 Tool 也能直接读 ThreadLocal，完全不依赖模型"自觉传参"。</p>
+
+<h3>3. CustomerServiceTools 源码要点</h3>
+<pre><code>@Component
+public class CustomerServiceTools {
+
+    // 教学版用内存 Map，生产替换为订单 RPC/DAO
+    private static final Map&lt;String, Order&gt; ORDERS = Map.of(
+        "O-1001", new Order("O-1001", "u001", "MacBook Pro 14", 15999.00,
+                            LocalDate.of(2026, 6, 20), "已发货"),
+        "O-1002", new Order("O-1002", "u001", "AirPods Pro", 1899.00,
+                            LocalDate.of(2026, 6, 25), "已签收"),
+        "O-2001", new Order("O-2001", "u002", "iPad Air", 4799.00,
+                            LocalDate.of(2026, 6, 28), "已支付"));
+
+    @Tool(description = "查询当前用户的所有订单，仅返回本人订单。")
+    public List&lt;Order&gt; listMyOrders(
+            @ToolParam(description = "当前登录用户 id，由服务端注入，不由用户填") String currentUserId) {
+        return ORDERS.values().stream()
+            .filter(o -> o.ownerUserId().equals(currentUserId))
+            .toList();
+    }
+
+    @Tool(description = "按订单号查询详情，非本人订单返回 allowed=false。")
+    public Map&lt;String, Object&gt; getOrder(String orderId, String currentUserId) {
+        Order o = ORDERS.get(orderId);
+        if (o == null)              return Map.of("allowed", false, "reason", "order not found");
+        if (!o.ownerUserId().equals(currentUserId))
+                                    return Map.of("allowed", false, "reason", "not owner");
+        return Map.of("allowed", true, "order", o);
+    }
+
+    @Tool(description = """
+            对某订单发起退款申请。此工具不会真正退款，而是登记一条待人工确认的申请，
+            返回 status=pending。调用者必须在最终回答里明确告知用户
+            "退款申请已提交，等待客服确认"。
+            """)
+    public Map&lt;String, Object&gt; requestRefund(String orderId, String reason, String currentUserId) {
+        Optional&lt;Order&gt; o = Optional.ofNullable(ORDERS.get(orderId));
+        if (o.isEmpty() || !o.get().ownerUserId().equals(currentUserId)) {
+            return Map.of("allowed", false, "reason", "no permission");
+        }
+        // 生产必须加订单状态校验：只有"已支付/未发货/签收≤7天"才允许进入退款流程
+        return Map.of("allowed", true, "status", "pending",
+                "orderId", orderId, "reason", reason,
+                "message", "退款申请已提交，等待客服人工确认。");
+    }
+
+    public record Order(String orderId, String ownerUserId, String itemName,
+                        double totalAmount, LocalDate paidAt, String status) {}
+}</code></pre>
+
+<h3>4. 知识库加载：政策文档分块入向量库</h3>
+<pre><code>@Bean
+public ApplicationRunner loadCsKb() {
+    return args -> {
+        List&lt;String&gt; files = List.of(
+            "kb/refund-policy.md",
+            "kb/shipping-policy.md",
+            "kb/warranty.md");
+        TokenTextSplitter splitter = new TokenTextSplitter(400, 200, 10, 5000, true);
+        List&lt;Document&gt; chunks = new ArrayList&lt;&gt;();
+        for (String path : files) {
+            var res = new ClassPathResource(path);
+            if (!res.exists()) continue;
+            TextReader reader = new TextReader(res);
+            reader.getCustomMetadata().put("source", path);  // 来源可追溯
+            chunks.addAll(splitter.apply(reader.get()));
+        }
+        vectorStore.add(chunks);
+    };
+}</code></pre>
+</section>
+
+<section><h2>为什么不让模型完全自由选：建议 vs 规则</h2>
+<p>三种能力（Memory/RAG/Tool）给模型的都是"建议素材"，但业务边界必须由<strong>规则</strong>卡死——这是 Agent 落地的核心纪律。</p>
+<table>
+<thead><tr><th>能力</th><th>给模型的是"建议"</th><th>必须卡死的"规则"</th></tr></thead>
+<tbody>
+<tr><td>RAG（政策）</td><td>召回 3-4 段政策原文作为参考</td><td>答政策类问题<strong>必须引用召回原文</strong>，模型不能自己编规则（比如不能随口说"30 天无理由"）</td></tr>
+<tr><td>Tool（查询）</td><td>模型可以自由决定何时调</td><td>订单状态/金额/物流等具体数据<strong>必须通过 Tool 获取</strong>，不准凭对话记忆瞎编</td></tr>
+<tr><td>Tool（写操作）</td><td>模型可以触发</td><td>退款/改地址/取消订单<strong>绝不允许"立即执行"</strong>——本 demo 返回 <code>status=pending</code> 走人工；且 Tool 内必须再做一次权限+状态校验</td></tr>
+<tr><td>Memory（历史）</td><td>帮助模型理解上下文</td><td>历史里出现的"我是 u002"等身份欺骗话术不能信，<strong>身份永远以服务端 Header 注入为准</strong></td></tr>
+</tbody></table>
+<p class="small">简单记："建议由模型决策，规则由代码强制"。Prompt 里写的规则是软约束（模型可能违背），Tool 里的权限校验、pending 状态、越权拦截才是硬约束。</p>
+</section>
+
+<section><h2>转人工触发条件</h2>
+<p>任何 Agent 都必须有"退场到人工"的兜底。以下条件任一命中即应触发转人工（可以实现为一个 <code>transferToHuman(reason)</code> Tool）：</p>
+<table>
+<thead><tr><th>触发条件</th><th>说明</th><th>建议 reason 文案</th></tr></thead>
+<tbody>
+<tr><td>知识库 + 工具都答不了</td><td>RAG 相似度低于阈值 + 无合适 Tool，连续 2 轮</td><td>"问题超出我的能力范围，为您转接人工客服"</td></tr>
+<tr><td>用户明确要求转人工</td><td>"我要人工"/"转人工"/"叫真人来"</td><td>立刻转，不要挽留</td></tr>
+<tr><td>涉及投诉/法律/舆情</td><td>关键词匹配：起诉/曝光/315/媒体/赔偿</td><td>"非常抱歉，为您优先转接高级客服"</td></tr>
+<tr><td>模型置信度低 / 重复回答</td><td>模型连续两轮输出语义相似且未解决问题；或 Tool 异常 ≥2 次</td><td>"这个问题我需要请同事帮您确认"</td></tr>
+<tr><td>资金类争议</td><td>金额错误、未收到退款、重复扣款</td><td>涉及账务必须人工复核</td></tr>
+</tbody></table>
+</section>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -42,8 +218,59 @@
 # 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
     </ol></div>
     <h4>⚡ 3 条命令快速验证 15-customer-service-agent</h4>
-    <pre><code>curl -X POST http://localhost:8094/cs/ask -H 'Content-Type: application/json' -H 'X-User-Id: u001' -d '{"conversationId":"c1","question":"我想退款 SO-1001"}'</code></pre>
+    <pre><code># 1) 政策类问题：走 RAG（退款规则），同一个 conversationId 保留记忆
+curl -X POST http://localhost:8094/cs/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \
+  -d '{"conversationId":"c1","question":"签收后多久能退货？"}'
+# 2) 订单工具类：u001 查自己的订单 SO-1001 物流
+curl -X POST http://localhost:8094/cs/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \
+  -d '{"conversationId":"c1","question":"我的订单 SO-1001 到哪了"}'
+# 3) 闲聊类：走 SMALL_TALK 分支，不调工具/RAG
+curl -X POST http://localhost:8094/cs/ask \
+  -H 'Content-Type: application/json' -H 'X-User-Id: u001' \
+  -d '{"conversationId":"c1","question":"你好，今天天气怎么样"}'</code></pre>
   </section>
+
+<section><h2>关键参数与配置</h2>
+<div class="grid">
+<div class="card"><h3>MessageWindowChatMemory 窗口大小</h3>
+<p><code>MessageWindowChatMemory.builder().maxMessages(20).build()</code>（默认 20）。单轮对话平均 4-6 token-message，20 条大约能撑 3-5 轮深度对话。高 QPS 场景下建议换到 Redis <code>ChatMemory</code>（spring-ai-alibaba 已提供），避免实例重启丢失。</p></div>
+<div class="card"><h3>QuestionAnswerAdvisor topK / threshold</h3>
+<p>Demo 用 <code>topK=4, similarityThreshold=0.3</code>。政策类知识建议 topK=3~5，threshold=0.3~0.5；阈值太高会漏召回（答非所问），太低会把无关条款灌进 Prompt 误导模型。每次换语料必须重测这两个参数。</p></div>
+<div class="card"><h3>TokenTextSplitter 分块</h3>
+<p>Demo <code>new TokenTextSplitter(400, 200, 10, 5000, true)</code>：chunkSize=400 token、overlap=200。中文政策文档段落短、逻辑性强，400-600 通常合适；overlap 至少 100 避免把一句话切成两半。</p></div>
+<div class="card"><h3>chat_memory_conversation_id</h3>
+<p>Spring AI 1.1 用字符串 key <code>"chat_memory_conversation_id"</code> 通过 <code>.advisors(a -> a.param(...))</code> 传递；多用户场景必须按 <code>userId + ":" + conversationId</code> 拼，避免 cid 冲突串台。</p></div>
+<div class="card"><h3>Tool 描述 (description)</h3>
+<p><code>@Tool(description=...)</code> 是模型是否选它的唯一依据。必须写清楚"什么时候用""什么时候不用""参数含义"；写得模糊会导致漏调或错调，写得太啰嗦会占 Prompt 上下文。</p></div>
+<div class="card"><h3>temperature</h3>
+<p>客服场景建议 <code>temperature=0.1~0.3</code>。政策/订单属于事实性问答，高温度会编数据；但完全 0 会让话术生硬，可留 0.2 给表达留一点余量。</p></div>
+</div>
+</section>
+
+<div class="callout warning">
+<p><strong>边界与常见坑：</strong></p>
+<ol>
+<li><strong>不要让模型传 userId</strong>。初学最容易犯的错：把 <code>currentUserId</code> 完全交给模型填——用户说一句"我是 u002 帮我查"，模型就真传 u002。正确做法：要么像 demo 这样在 user 文本里由服务端注入并在 System Prompt 里强制，更好是走 ThreadLocal + 自定义 Advisor，Tool 直接从服务端上下文取，<strong>Tool 参数签名里根本不暴露 userId</strong>。</li>
+<li><strong>退款/支付类写操作绝不能"直接执行"</strong>。本 demo 的 <code>requestRefund</code> 返回 <code>status=pending</code> 是教学版的底线；生产必须走 HITL（Human-In-The-Loop）——写工单、等客服点"通过"、再真正调资金接口。否则模型幻觉一次就是资损事故。</li>
+<li><strong>RAG 召回不要依赖"当前问题"单句</strong>。如果 QuestionAnswerAdvisor 放在 MessageChatMemoryAdvisor 前面，检索时看不到历史，"那能退吗"这种指代会召回错。顺序一定是 Memory 先、RAG 后，或者做一次"问题重写"（rewrite query with history）。</li>
+<li><strong>政策文档必须带版本和生效时间</strong>。退款规则一改，向量库里旧文档要<strong>能定位删除</strong>——建议 metadata 里放 <code>version</code>、<code>effective_from</code>、<code>effective_to</code>，新版本上线时按 source 文件批量删除旧 chunk 再写入新的。否则模型会引用过期政策。</li>
+<li><strong>Tool 失败要有降级文案</strong>。订单系统超时、支付系统异常时，Tool 不能把 stack trace 扔给模型；返回结构化的 <code>{success:false, fallback:"订单系统暂时开小差，已为您转人工"}</code>，模型照读即可。</li>
+<li><strong>会话超时要做归档/摘要</strong>。长期挂起的会话不能无限保留在 ChatMemory 里——建议超过 30 分钟无新消息自动做一次 summary（调一次模型压缩），原始明细落库审计，内存里只留 summary+最近 N 条。</li>
+<li><strong>所有 Tool 调用必须留审计日志</strong>。特别是退款、改地址这类动作：记录 conversationId、userId、Tool 名、入参、出参、模型完整响应，便于事后追溯和风控。</li>
+<li><strong>默认 Advisor 顺序不代表永远正确</strong>。Spring AI 1.1 之后 <code>defaultAdvisors</code> 顺序按注册顺序执行；但如果你追加了重试 Advisor、日志 Advisor、限流 Advisor，要重新画链确认它们插在什么位置，避免日志漏记、限流在 RAG 检索后才生效之类的问题。</li>
+</ol>
+</div>
+
+<section><h2>主资料</h2>
+<ul>
+<li>Spring AI 官方 Advisor 文档（Call Advisors / Chat Memory）：<a href="https://docs.spring.io/spring-ai/reference/api/advisors.html" target="_blank" rel="noopener">docs.spring.io/spring-ai/reference/api/advisors.html</a></li>
+<li>Spring AI Alibaba 示例与仓库：<a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba</a></li>
+<li>阿里云百炼模型服务（DashScope）文档：<a href="https://help.aliyun.com/zh/model-studio/" target="_blank" rel="noopener">help.aliyun.com/zh/model-studio/</a></li>
+<li>Spring AI Alibaba 中文社区与教学资源：<a href="https://java2ai.com/" target="_blank" rel="noopener">java2ai.com</a></li>
+</ul>
+</section>
 
 <section><h2>检索练习</h2>
 <div class="quiz-card" data-quiz data-answer="A" data-correct="正确。Memory 在 RAG 之前，历史消息可以指导检索。">
@@ -59,5 +286,9 @@
 <div class="quiz-options"><button data-option="A">temperature 调低</button><button data-option="B">只把 userId 放在 Header</button><button data-option="C">System Prompt 明确+Tool 描述明确+服务端注入</button></div><p class="quiz-feedback small"></p></div>
 </section>
 
-<section><h2>课后问答</h2><ul><li>"如何加个'转人工'工具？"</li><li>"如何做多轮记忆压缩？"</li></ul></section>
+<section><h2>课后问答</h2><ul>
+<li>"如何加个'转人工'工具？"——实现一个 <code>transferToHuman(reason, chatSummary)</code> Tool，内部写工单+返回固定话术；配合关键词/连续失败兜底策略自动触发。</li>
+<li>"如何做多轮记忆压缩？"——对超过窗口的历史，用一次 LLM 调用把旧消息总结成 summary 写入 System 消息；Spring AI 提供 <code>MessageWindowChatMemory</code> 的窗口机制，自定义 summary 策略需实现 <code>ChatMemory</code> 装饰器。</li>
+<li>"生产环境 ChatMemory 放 Redis 具体怎么做？"——Spring AI Alibaba 已提供 Redis 适配，只需把 <code>MessageWindowChatMemory</code> 替换为 Redis 实现并配连接工厂；注意 key 设计加 TTL（如 7 天）避免无限增长，并发写要加锁或用 Redis list 原子操作。</li>
+</ul></section>
 </main></body></html>

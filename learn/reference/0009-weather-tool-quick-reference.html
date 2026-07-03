@@ -1,24 +1,67 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>天气工具快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>外部 API 风格 Tool 快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>多工具与结果回传快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>多工具与结果回传快速参考</h1>
+    <p class="small">对应第 0009 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>返回结构模板</h2>
-<pre><code>record CurrentWeather(
-  boolean supported,     // 未支持城市 / 数据缺失时 false
-  String cityCode,
-  String cityName,
-  Integer temperatureC,
-  String condition,
-  Integer humidityPercent,
-  Integer windLevel,
-  String error) {}</code></pre></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>工具结果结构化返回</code></td><td>返回 Map/record 比返回长文本好（模型容易二次组合）</td></tr>
+      <tr><td><code>多工具注册</code></td><td>.defaultTools(weatherTools, trafficTools)</td></tr>
+      <tr><td><code>工具组合</code></td><td>模型可串行调多个工具（查天气→查交通→综合建议）</td></tr>
+      <tr><td><code>归一化参数</code></td><td>城市名等入参要在工具内做 trim/别名归一化</td></tr>
+      <tr><td><code>超时/熔断</code></td><td>外部 API 调用建议套 Resilience4j/Sentinel</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>迁移到真实 API</h2>
-<ul>
-<li>用 RestClient / OkHttp，注意 connect / read / write 超时都要显式设置。</li>
-<li>加缓存（Caffeine，例如同城 5 分钟内复用）。</li>
-<li>把 API Key 用配置注入到 Tool 类，不通过 Prompt 传。</li>
-<li>把错误码到用户话术的映射放 Tool 内部，不要暴露给模型。</li>
-</ul></section>
-</main></body></html>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>@Tool(description="查城市天气；city 参数接受中文城市名，如 北京/上海")
+public Map<String,Object> getWeather(@ToolParam(description="城市名") String city) {
+  String normalized = city.replace("市","").trim();
+  return Map.of("city", normalized, "temp", 26, "condition", "晴");
+}</code></pre>
+  </section>
+
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>工具返回不要返回自然语言长段落，结构化字段更利于模型组合</li>
+      <li>多工具场景工具 description 必须明确边界（"只处理天气，不要处理交通"）</li>
+      <li>外部 API 要设置 connect/read timeout 并缓存结果（天气可缓存 10min）</li>
+      <li>模型传的城市名可能五花八门（"北京市"/"北京"/"首都"），要在工具内归一化</li>
+      <li>工具依赖的下游 API 故障要返回 {error:"..."} 而不是抛异常，让模型能降级回答</li>
+      <li>不要在工具内二次调 ChatClient（容易形成递归调用）</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会写多工具场景的 description 边界吗？</li>
+      <li>工具返回为什么推荐结构化？</li>
+      <li>会做参数归一化吗？</li>
+      <li>会给外部 API 加超时缓存吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

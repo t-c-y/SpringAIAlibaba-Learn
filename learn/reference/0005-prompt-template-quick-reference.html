@@ -1,23 +1,65 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Prompt 模板快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>Prompt 模板快速参考</h1></header>
-<section><h2>三种典型场景</h2>
-<pre><code>// 1. 字符串直接渲染
-String u = new PromptTemplate("请解释 {topic} 对 {aud} 的价值").render(Map.of("topic","RAG","aud","后端"));
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prompt 模板快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>Prompt 模板快速参考</h1>
+    <p class="small">对应第 0005 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-// 2. 从 classpath 加载
-@Value("classpath:prompts/lesson.st") Resource res;
-String tmpl = new String(res.getInputStream().readAllBytes(), UTF_8);
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>new PromptTemplate("text {var}")</code></td><td>内联字符串模板，{var} 是变量</td></tr>
+      <tr><td><code>new PromptTemplate(Resource)</code></td><td>从 classpath 文件加载 .st 模板</td></tr>
+      <tr><td><code>.render(Map.of("k","v"))</code></td><td>渲染为 String（单 message）</td></tr>
+      <tr><td><code>new SystemPromptTemplate(st).createMessage(vars)</code></td><td>构造 System 消息</td></tr>
+      <tr><td><code>new UserPromptTemplate(st).createMessage(vars)</code></td><td>构造 User 消息</td></tr>
+      <tr><td><code>classpath:prompts/xxx.st</code></td><td>推荐模板资源路径</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-// 3. 组装多消息 Prompt
-Prompt p = new Prompt(List.of(sysMsg, new UserMessage(userText)));</code></pre></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>var st = new PromptTemplate(new ClassPathResource("prompts/lesson-user.st"));
+String userMsg = st.render(Map.of("topic", topic, "audience", audience));</code></pre>
+  </section>
 
-<section><h2>模板治理建议</h2>
-<ul>
-<li>一个业务场景一个模板文件，文件名与业务同名。</li>
-<li>模板里保留结构（角色/结构/边界）稳定，变量只承担"每次不同的信息"。</li>
-<li>模板上加版本号 header 注释，便于 review。</li>
-<li>灰度：v1.st / v2.st，配合流量分流。</li>
-</ul></section>
-</main></body></html>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>不要用字符串拼接代替模板——易被 Prompt 注入（用户输入中的 { 和换行破坏 Prompt）</li>
+      <li>模板文件保存为 UTF-8，避免 IDE 存成 GBK</li>
+      <li>变量缺失会抛异常，render 前要校验必填字段</li>
+      <li>渲染后总长度要算 token 避免超上下文</li>
+      <li>不要在模板里硬编码 API Key/数据库密码</li>
+      <li>多语言场景用不同 .st 文件（如 lesson-user.st / lesson-user-en.st）不要在模板里 if/else</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会从 classpath 加载 .st 模板吗？</li>
+      <li>会 render 变量吗？</li>
+      <li>知道为什么不用字符串拼接吗？</li>
+      <li>会同时模板化 System 和 User 吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

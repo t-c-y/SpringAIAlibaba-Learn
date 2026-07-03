@@ -1,30 +1,75 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent 平台快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>企业 Agent 平台快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent 平台快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>Agent 平台快速参考</h1>
+    <p class="small">对应第 0018 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>骨架</h2>
-<pre><code>interface Agent { String id(); String description(); AgentResponse handle(req); }
-class AgentRouter { Agent route(String question); }
-class RequestGuard { boolean tryAcquire(String userId); }
-class PlatformController { /* 组合上面三者 */ }</code></pre></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>RequestGuard</code></td><td>限流/鉴权入口，令牌桶算法（X req/min/user）</td></tr>
+      <tr><td><code>AgentRouter</code></td><td>按意图路由到不同 Agent 实现（关键词/embedding/小分类模型）</td></tr>
+      <tr><td><code>Agent 接口</code></td><td>String id(); String handle(uid, question);</td></tr>
+      <tr><td><code>AuditLog</code></td><td>记录每次调用（id/at/uid/agentId/latency/q/a）</td></tr>
+      <tr><td><code>429 Too Many Requests</code></td><td>限流拒绝返回，含 Retry-After 头</td></tr>
+      <tr><td><code>Sentinel/Nacos</code></td><td>生产级限流熔断、配置中心</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>逐步演进</h2>
-<ol>
-<li>加 Sentinel / Resilience4j 做流控。</li>
-<li>把 System Prompt / 路由规则挪到 Nacos。</li>
-<li>接入 OpenTelemetry Traces。</li>
-<li>把审计写 Kafka + ClickHouse。</li>
-<li>建立发布前评测门禁。</li>
-<li>模型 provider 抽象层：主备切换、成本路由。</li>
-</ol></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>@PostMapping("/platform/ask")
+public Object ask(@RequestHeader("X-User-Id") String uid,
+                 @RequestBody AskRequest req) {
+  guard.checkAccess(uid); // 限流+鉴权
+  Agent agent = router.route(req.question());
+  long t0 = System.currentTimeMillis();
+  String ans = agent.handle(uid, req.question());
+  audit.log(uid, agent.id(), System.currentTimeMillis()-t0, req.question(), ans);
+  return Map.of("success",true,"routedAgent",agent.id(),"answer",ans);
+}</code></pre>
+  </section>
 
-<section><h2>安全与治理清单</h2>
-<ul>
-<li>提示词注入防护（输入过滤 + 输出审查）</li>
-<li>PII 脱敏</li>
-<li>越权访问日志</li>
-<li>模型输出内容审核（safety）</li>
-<li>成本上限告警</li>
-</ul></section>
-</main></body></html>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>路由错误必须有 fallback Agent（兜底通用模型），不能直接报错</li>
+      <li>审计日志要 PII 脱敏（手机号/身份证/邮箱打码）</li>
+      <li>Agent 要隔离超时（一个慢 Agent 不能卡整个平台）</li>
+      <li>新 Agent 上线必须灰度（按用户/百分比放量）</li>
+      <li>入口要做 Prompt 安全过滤（涉黄涉政/注入/越狱）</li>
+      <li>多租户场景 Agent 清单/限流配额/审计要按 tenantId 隔离</li>
+      <li>metrics 维度：总请求量/错误率/各 Agent 分布/平均延迟/P99</li>
+      <li>不要让 Agent 直接暴露为公共 API，必须经过平台网关</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会设计 Agent 接口吗？</li>
+      <li>知道为什么要限流+审计吗？</li>
+      <li>会做灰度发布和 fallback 吗？</li>
+      <li>为什么要 PII 脱敏？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

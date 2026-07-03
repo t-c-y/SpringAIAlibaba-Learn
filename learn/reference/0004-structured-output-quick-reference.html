@@ -1,32 +1,66 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>结构化输出快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>结构化输出快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>结构化输出快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>结构化输出快速参考</h1>
+    <p class="small">对应第 0004 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>三种典型用法</h2>
-<pre><code>// 1. 单对象
-X x = client.prompt().user("...").call().entity(X.class);
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>.entity(MyRecord.class)</code></td><td>单个 Bean 结构化输出，底层用 BeanOutputConverter</td></tr>
+      <tr><td><code>.entity(new ParameterizedTypeReference<List<X>>(){})</code></td><td>集合/嵌套类型结构化输出</td></tr>
+      <tr><td><code>@JsonPropertyDescription("...")</code></td><td>给字段加自然语言注释，会出现在 JSON Schema 里帮助模型理解</td></tr>
+      <tr><td><code>spring.ai.dashscope.chat.options.temperature</code></td><td>建议 ≤ 0.1，高温度会让模型改字段名</td></tr>
+      <tr><td><code>BeanOutputConverter<T></code></td><td>手动用：converter.getJsonSchema() 注入 System Prompt，再 converter.convert(output)</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-// 2. 列表
-List&lt;X&gt; list = client.prompt().user("...").call()
-   .entity(new ParameterizedTypeReference&lt;List&lt;X&gt;&gt;() {});
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>.user(request.topic())
+.call()
+.entity(LessonOutline.class);
+// record LessonOutline(String title, String summary, List<String> sections, String difficulty) {}</code></pre>
+  </section>
 
-// 3. Map
-Map&lt;String, Object&gt; map = client.prompt().user("...").call()
-   .entity(new ParameterizedTypeReference&lt;Map&lt;String, Object&gt;&gt;() {});</code></pre></section>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>返回类型必须是具体 class 或具名 ParameterizedTypeReference，不能用 List<Object></li>
+      <li>字段要写 @JsonPropertyDescription("字段含义")，否则模型不理解语义</li>
+      <li>高 temperature 下模型可能给字段加 ```json  包裹导致解析失败 → System 明确"只输出 JSON"</li>
+      <li>不要用 Object / Map<String,Object> 做字段类型（反序列化不稳定）</li>
+      <li>记录字段要 Java 17 record 或带无参构造的 POJO</li>
+      <li>字段不要过多（≤10 个），嵌套 ≤ 2 层，否则模型容易丢字段</li>
+    </ul>
+    </div>
+  </section>
 
-<section><h2>踩坑清单</h2>
-<ul>
-<li>字段名不一致 → 模型输出的 JSON 字段跟 record 对不上 → 转换失败或字段为 null。</li>
-<li>温度太高 → 模型加解释或包 ```json``` → 反序列化异常。</li>
-<li>字段类型用 Object → 模型可能给字符串给对象 → 类型不稳定。</li>
-<li>Java 17 record 是不可变的 → 反序列化只会走 canonical 构造器。</li>
-</ul></section>
-
-<section><h2>自检</h2>
-<ul>
-<li>是否为 record？字段类型是否具体？</li>
-<li>temperature ≤ 0.2？</li>
-<li>System Prompt 里有没有加"不要输出 ```json``` 包装、不要解释"？</li>
-</ul></section>
-</main></body></html>
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会用 .entity(X.class) 吗？</li>
+      <li>会用 ParameterizedTypeReference 拿 List<X> 吗？</li>
+      <li>知道 temperature 要压低吗？</li>
+      <li>会用 @JsonPropertyDescription 给字段加注释吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

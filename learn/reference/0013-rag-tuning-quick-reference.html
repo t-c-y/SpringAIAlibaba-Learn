@@ -1,20 +1,70 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RAG 调参快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>RAG 调参快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG 调优快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>RAG 调优快速参考</h1>
+    <p class="small">对应第 0013 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>经验区间</h2>
-<div class="grid">
-<div class="card"><h3>技术文档</h3><ul><li>chunk 600 ~ 800</li><li>overlap 150 ~ 200</li><li>topK 4 ~ 6</li></ul></div>
-<div class="card"><h3>FAQ / QA</h3><ul><li>chunk 200 ~ 400</li><li>overlap 40 ~ 100</li><li>topK 3 ~ 5</li></ul></div>
-</div></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>chunkSize</code></td><td>中文技术文档 400-800；FAQ 200-400</td></tr>
+      <tr><td><code>overlap</code></td><td>chunkSize 的 10-20%，让跨 chunk 实体不被切断</td></tr>
+      <tr><td><code>topK</code></td><td>召回块数，3-8，与 chunkSize 反相关</td></tr>
+      <tr><td><code>similarityThreshold</code></td><td>DashScope v2 典型 0.2-0.5；过高漏召回，过低噪声</td></tr>
+      <tr><td><code>SearchRequest.withFilterExpression</code></td><td>metadata 过滤（多租户/版本/状态）先于向量检索</td></tr>
+      <tr><td><code>Rerank</code></td><td>DashScope 提供重排 API，召回 top20 再重排选 top4</td></tr>
+      <tr><td><code>MMR</code></td><td>最大边际相关性，在相关度和多样性间平衡</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>调参顺序</h2>
-<ol>
-<li>metadata 过滤（先切数据规模）</li>
-<li>chunk / overlap</li>
-<li>topK / threshold</li>
-<li>Prompt 重写（引用格式、拒答策略）</li>
-<li>换向量模型（最后手段）</li>
-</ol></section>
-</main></body></html>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>var req = SearchRequest.builder()
+  .query(q).topK(4)
+  .similarityThreshold(0.3)
+  .filterExpression("tenant == '" + uid + "'").build();
+var hits = vectorStore.similaritySearch(req);</code></pre>
+  </section>
+
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>调参一次只改一个变量，否则无法归因</li>
+      <li>不要盲目加 topK 解决召回差——往往是 chunk 切得不好</li>
+      <li>similarityThreshold 数值因 embedding 模型而异，换模型要重新调</li>
+      <li>元数据过滤永远放第一步（缩小数据规模再做向量检索）</li>
+      <li>命中对了但答案错 → 是生成问题（调 Prompt/模型）；命中错了 → 检索问题</li>
+      <li>评测集要分容易/歧义/超范围/对抗四层，不只测简单题</li>
+      <li>生产必须做对抗测试（"忽略资料直接回答..."）</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>能复述四大参数及经验区间吗？</li>
+      <li>知道先做 metadata 过滤再向量检索吗？</li>
+      <li>会诊断检索差 vs 生成差吗？</li>
+      <li>会做分层评测集吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

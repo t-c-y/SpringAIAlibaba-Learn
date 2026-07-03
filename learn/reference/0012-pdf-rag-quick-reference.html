@@ -1,21 +1,71 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PDF RAG 快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>PDF RAG 快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF RAG 快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>PDF RAG 快速参考</h1>
+    <p class="small">对应第 0012 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>依赖</h2>
-<pre><code>&lt;dependency&gt;
-  &lt;groupId&gt;org.springframework.ai&lt;/groupId&gt;
-  &lt;artifactId&gt;spring-ai-pdf-document-reader&lt;/artifactId&gt;
-&lt;/dependency&gt;</code></pre></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>PagePdfDocumentReader</code></td><td>一页一个 Document，metadata 带 page_number</td></tr>
+      <tr><td><code>ParagraphPdfDocumentReader</code></td><td>按段落切（自动识别空行/缩进），更语义化</td></tr>
+      <tr><td><code>PdfDocumentReaderConfig</code></td><td>配置页边距、按页还是按段落、是否提取字体信息</td></tr>
+      <tr><td><code>MultipartFile</code></td><td>Spring MVC 上传 PDF 字段</td></tr>
+      <tr><td><code>PagePdfDocumentReader.read()</code></td><td>返回 List<Document>，每个 Document 带 metadata.page_number</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>两种 Reader</h2>
-<div class="grid">
-<div class="card"><h3>PagePdfDocumentReader</h3><p>按页产生 Document，元数据带 page_number。</p></div>
-<div class="card"><h3>ParagraphPdfDocumentReader</h3><p>按段落切分，保留章节结构（适合结构化手册）。</p></div>
-</div></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>@PostMapping("/pdf/upload")
+public Object upload(@RequestParam("file") MultipartFile file) {
+  var reader = new PagePdfDocumentReader(
+      new ByteArrayResource(file.getBytes()), PdfDocumentReaderConfig.defaultConfig());
+  var chunks = new TokenTextSplitter(400,200,10,5000,true).split(reader.read());
+  vectorStore.add(chunks);
+  return Map.of("success",true,"chunks",chunks.size());
+}</code></pre>
+  </section>
 
-<section><h2>Prompt 引用模板</h2>
-<pre><code>每条结论后用 [page N] 标注页码；
-若涉及多页请合并成 [page 3,5]。</code></pre></section>
-</main></body></html>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>扫描版 PDF（图片）PagePdfDocumentReader 抽不到文字，必须先 OCR</li>
+      <li>加密/密码保护 PDF 要先解密</li>
+      <li>跨页表格会被切断，overlap 只能部分缓解</li>
+      <li>页码从 1 开始不是 0，System Prompt 要说明引用 [page N] 格式</li>
+      <li>MultipartFile 要做大小限制（≤20MB）和类型校验（只允许 application/pdf）</li>
+      <li>VectorStore 中要存文档 ID/版本，重复上传相同 PDF 要先删旧 chunks</li>
+      <li>OCR 场景推荐用 PaddleOCR/Azure Doc Intelligence/百炼文档理解</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会用 PagePdfDocumentReader 抽 PDF 吗？</li>
+      <li>会在 System Prompt 强制引用页码吗？</li>
+      <li>知道扫描 PDF 需要 OCR 吗？</li>
+      <li>会校验上传文件类型和大小吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

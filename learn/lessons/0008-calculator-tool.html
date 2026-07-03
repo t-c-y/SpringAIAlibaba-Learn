@@ -1,10 +1,67 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tool Calling 入门：计算器</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/quiz.js" defer></script></head><body><main>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool Calling 入门：计算器</title><link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css"><script src="../assets/quiz.js" defer></script>
+  <script src="../assets/nav.js" defer></script></head><body><main>
 <header><div class="eyebrow">Lesson 0008 · Spring AI Alibaba</div>
 <h1>Tool Calling 入门：计算器</h1>
 <p>本课目标：第一次让模型"调用你写的 Java 方法"，理解 @Tool 描述如何影响模型选择。</p>
 <p class="small">配套 Demo：<code>demos/09-calculator-tool</code>。参考卡：<a href="../reference/0008-calculator-tool-quick-reference.html">Tool Calling 快速参考</a>。</p></header>
+
+<div class="callout">
+<p><strong>你今天要获得的一个能力：</strong>能独立写出被大模型稳定选中并正确调用的 <code>@Tool</code> 方法——理解"一次对话"背后隐藏的多轮 HTTP 往返，能通过调 <code>description</code> 让工具命中率从"偶尔用"提升到"必中"，并能按生产规范处理幂等、参数校验、错误返回和审计。</p>
+</div>
+
+<section><h2>Tool Calling 内部机制：一次对话背后的多轮往返</h2>
+<p>用户看到的是"我问了一句，模型答了一句"，但开启 Tool Calling 后，Spring AI 与 LLM 之间可能发生<strong>多次 HTTP 往返</strong>，直到模型给出最终自然语言答案。下面是一次四则运算 <code>(3.14+2.86)*5</code> 的真实时序：</p>
+<pre><code>用户 " (3.14 + 2.86) * 5 等于多少 "
+  │
+  ▼
+┌─────────────────────────────────────────────────────────┐
+│ ① ChatClient 把 user message + tools(JSON Schema)       │
+│    POST 给 DashScope（第 1 次 HTTP 往返）                │
+└─────────────────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────────────────┐
+│ ② LLM 判断：括号里是加法 → 不需要最终答案                │
+│    返回 finish_reason=tool_calls                         │
+│    tool_calls: [{id=t1, name=add, args={a:3.14,b:2.86}}]│
+└─────────────────────────────────────────────────────────┘
+  │  Spring AI 反射调用 CalculatorTools.add(3.14, 2.86)
+  ▼  拿到 6.0，封装成 role=tool 的消息
+┌─────────────────────────────────────────────────────────┐
+│ ③ 把 user+assistant(tool_calls)+tool(6.0) 一起 POST     │
+│    （第 2 次 HTTP 往返）                                 │
+└─────────────────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────────────────┐
+│ ④ LLM 判断：还要乘 5 → finish_reason=tool_calls          │
+│    tool_calls: [{id=t2, name=multiply, args={a:6,b:5}}] │
+└─────────────────────────────────────────────────────────┘
+  │  Spring AI 反射调用 multiply(6,5) → 30.0
+  ▼
+┌─────────────────────────────────────────────────────────┐
+│ ⑤ 再次 POST（第 3 次 HTTP 往返）                         │
+└─────────────────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────────────────┐
+│ ⑥ LLM 判断：结果已齐 → finish_reason=stop                │
+│    content: "(3.14+2.86)*5 = 30"                        │
+└─────────────────────────────────────────────────────────┘
+  │
+  ▼
+用户看到一次完整回答，背后其实是 3 次 HTTP 调用、2 次本地 Java 反射。</code></pre>
+
+<p><strong>关键认知：</strong>Tool Calling 不是"模型直接调你的 Java"，而是模型用结构化 JSON 告诉框架"我想用 xxx 方法、参数是 yyy"，框架负责反射执行、把结果以 <code>role=tool</code> 的消息塞回消息历史，再让模型继续推理。这是一个 <strong>"LLM 决策 → 框架执行 → 结果回传 → LLM 再决策"</strong> 的循环，直到 <code>finish_reason=stop</code>。</p>
+
+<p>这也是为什么"问一句话"会在日志里看到多次 tool call、多次 HTTP 请求——越复杂的表达式、越多步的推理，往返次数越多。延迟不是一次 RTT，而是 N 次 RTT + N 次本地方法执行之和。生产环境评估 SLA 时必须按"最坏往返次数"估延迟。</p>
+
+<p>Spring AI 的 <code>ChatClient</code> 默认开启工具循环（内部由 <code>ToolCallingChatClientAdvisor</code> 驱动），你不需要手写 while 循环；但你要知道这个循环存在，才能理解为什么工具方法<strong>可能被重试、被重复调用</strong>，以及为什么抛异常会打断整个循环。</p>
+</section>
 
 <section><h2>信息流</h2>
 <pre><code>用户 → ChatClient → LLM
@@ -15,14 +72,117 @@
                     ▼
                   LLM 综合成自然语言</code></pre></section>
 
-<section><h2>核心注解</h2>
-<pre><code>@Tool(description = "两个数相加，返回 a+b")
-public double add(@ToolParam(description = "第一个加数") double a,
-                  @ToolParam(description = "第二个加数") double b) { return a + b; }
+<section><h2>核心注解与完整源码</h2>
+<p>Spring AI 通过两个注解把普通 Java 方法暴露给模型：<code>@Tool</code> 标在方法上，<code>@ToolParam</code> 标在参数上。框架在启动时扫描它们，生成 OpenAI/DashScope 兼容的 <strong>JSON Schema</strong> 放进 <code>tools</code> 字段发给模型。模型从未见过你的源码，它选<seed:tool_call_never_used_51bce0c785ca2f68081bfa7d91973934>ԅ只能靠 <code>description</code> 的文字做"工具选择"——<strong>description 写得差 = 工具选不中 / 参数传错</strong>，这是企业里 80% Tool Calling 问题的根因。</p>
 
-// 注册
-ChatClient c = builder.defaultTools(new CalculatorTools()).build();</code></pre>
-<p><strong>description 是模型选工具的主要依据</strong>，务必写清楚"什么场景下用"。</p></section>
+<p>本 Demo 的 <code>CalculatorTools.java</code>（四个原子方法，每个做一件事）：</p>
+<pre><code>package com.example.springaialibaba.calculatortool;
+
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.stereotype.Component;
+
+@Component
+public class CalculatorTools {
+
+    @Tool(description = "两个数相加，输入 a 和 b，返回 a + b。")
+    public double add(@ToolParam(description = "第一个加数") double a,
+                      @ToolParam(description = "第二个加数") double b) {
+        return a + b;
+    }
+
+    @Tool(description = "两个数相减，返回 a - b。")
+    public double subtract(@ToolParam(description = "被减数") double a,
+                           @ToolParam(description = "减数") double b) {
+        return a - b;
+    }
+
+    @Tool(description = "两个数相乘，返回 a * b。")
+    public double multiply(@ToolParam(description = "第一个乘数") double a,
+                           @ToolParam(description = "第二个乘数") double b) {
+        return a * b;
+    }
+
+    @Tool(description = "两个数相除，返回 a / b。除数为 0 时抛异常并向调用方返回原因。")
+    public double divide(@ToolParam(description = "被除数") double a,
+                         @ToolParam(description = "除数，不能为 0") double b) {
+        if (b == 0) {
+            throw new IllegalArgumentException("除数不能为 0");
+        }
+        return a / b;
+    }
+}</code></pre>
+
+<p>注册到 ChatClient（Controller 里通常这么写）：</p>
+<pre><code>@Bean
+public ChatClient calculatorClient(ChatClient.Builder builder,
+                                   CalculatorTools tools) {
+    return builder
+            .defaultTools(tools)           // 扫描 @Tool 方法注册
+            .defaultAdvisors(new MessageChatMemoryAdvisor(/*...*/))
+            .build();
+}</code></pre>
+
+<h3>description 的写法原则</h3>
+<ul>
+<li><strong>写"何时用"+"做什么"+"返回什么"</strong>，不要只写方法名翻译。例：<code>"查询某员工在指定月份的工资明细，返回基本工资+奖金+扣款"</code> 比 <code>"工资查询"</code> 命中率高一个数量级。</li>
+<li><strong>用中文、别中英混杂、别用缩写</strong>。模型对 "orderId" 可能理解，但 "order_no" "ord_id" "OID" 混合出现会显著降低命中率。</li>
+<li><strong>参数 description 也要写</strong>——它会进 JSON Schema 的 <code>description</code> 字段，模型靠它决定自然语言中的哪片字对应哪个参数。</li>
+<li><strong>一个方法只做一件事</strong>。别写 <code>compute(String expr)</code> 试图让模型传表达式字符串——模型不知道你表达式语法，参数错误率极高。</li>
+</ul>
+</section>
+
+<section><h2>@ToolParam 类型反序列化：自然语言怎么变成 double</h2>
+<p>当用户说"三点一四加二点八六"，模型要在 tool_calls 里输出 <code>{"a": 3.14, "b": 2.86}</code>，Spring AI 再用 Jackson 反序列化到方法参数。Spring AI 对 <code>@ToolParam</code> 支持的类型：</p>
+<table>
+<thead><tr><th>Java 类型</th><th>模型传参示例</th><th>注意事项</th></tr></thead>
+<tbody>
+<tr><td><code>int</code> / <code>Integer</code></td><td><code>5</code></td><td>传小数会反序列化失败</td></tr>
+<tr><td><code>long</code> / <code>Long</code></td><td><code>1700000000000</code></td><td>注意 JS number 精度（超过 2^53 要 String）</td></tr>
+<tr><td><code>double</code> / <code>Double</code></td><td><code>3.14</code></td><td>自然语言"三点一四"模型会转 3.14</td></tr>
+<tr><td><code>boolean</code> / <code>Boolean</code></td><td><code>true</code> / <code>false</code></td><td>模型会把"是/否/对/错"映射过来</td></tr>
+<tr><td><code>String</code></td><td><code>"张三"</code></td><td>首选，最稳</td></tr>
+<tr><td><code>List&lt;String&gt;</code> / <code>List&lt;T&gt;</code></td><td><code>["北京","上海"]</code></td><td>适合多选场景</td></tr>
+<tr><td><code>Map&lt;String,Object&gt;</code></td><td><code>{"k":"v"}</code></td><td>兜底，少用，模型容易乱填 key</td></tr>
+<tr><td>嵌套 <code>record</code> / POJO</td><td><code>{"addr":{"city":"bj"}}</code></td><td>会递归生成 JSON Schema</td></tr>
+<tr><td><code>enum</code></td><td><code>"PAID"</code></td><td>枚举值会进 schema enum 字段，强烈推荐</td></tr>
+</tbody>
+</table>
+<p><strong>建议：</strong>能用 <code>String</code> + 业务校验就不用复杂对象；能用 <code>enum</code> 就不用自由字符串；金额/长 ID 一律用 <code>String</code> 避免精度损失。</p>
+</section>
+
+<section><h2>关键参数与配置</h2>
+<div class="grid">
+<div class="card"><h3>spring.ai.dashscope.api-key</h3><p><strong>默认：</strong>无<br><strong>何时调：</strong>必填。建议走环境变量 <code>DASHSCOPE_API_KEY</code>，别写进 yml。</p></div>
+<div class="card"><h3>spring.ai.dashscope.chat.options.model</h3><p><strong>默认：</strong>qwen-plus<br><strong>何时调：</strong>Tool Calling 推荐 <code>qwen-max</code>/<code>qwen-plus</code>；qwen-turbo 在多步工具上稳定性差。</p></div>
+<div class="card"><h3>temperature</h3><p><strong>默认：</strong>0.7<br><strong>何时调：</strong>Tool 场景一律降到 <strong>0.1~0.3</strong>，降低乱选工具、乱造参数的概率。</p></div>
+<div class="card"><h3>defaultTools(tools...)</h3><p><strong>默认：</strong>空<br><strong>何时调：</strong>注册 @Tool 对象。生产环境不要无脑 defaultTools 全部工具，按接口最小集注册。</p></div>
+<div class="card"><h3>toolCallBack / 工具返回值类型</h3><p><strong>默认：</strong>toString 序列化<br><strong>何时调：</strong>建议返回 <code>record</code> 或明确结构的 JSON 字符串；抛异常会中断循环。</p></div>
+<div class="card"><h3>ChatModel 工具调用的 internalToolCallLimit</h3><p><strong>默认：</strong>10 次<br><strong>何时调：</strong>多步推理超过 10 次会强制 stop；复杂 agent 可适度上调，同时加成本告警。</p></div>
+</div>
+</section>
+
+<section><h2>实验：description 的质量决定工具命中率</h2>
+<p>做完基础练习后，做这个对比实验（10 分钟，收益巨大）：</p>
+<ol>
+<li><strong>清晰 description 版本</strong>（当前代码）：问 <code>1 + 1 = ?</code>，日志里应看到 <code>add</code> 被调用，返回 2.0，命中率接近 100%。</li>
+<li>把 <code>add</code> 的 description 改成 <code>"数学工具"</code>，重启，问同样的问题——模型大概率不再调用 add，而是直接用参数化知识回答，甚至选错方法。</li>
+<li>再改成 <code>"utility method for numbers"</code>（纯英文/缩写），中文模型命中率进一步下降。</li>
+<li>把 <code>add</code> 删掉、保留 subtract/multiply/divide，问 <code>1+1</code>——模型通常会"用 multiply(1,1) 凑合"或直接放弃调用，因为它没有更好的选择。这就是生产里"工具写了但模型不用"的最常见根因：<strong>不是模型笨，是你的 description 没给它足够的选择信号</strong>。</li>
+</ol>
+</section>
+
+<div class="callout warning">
+<p><strong>边界与常见坑（生产必读）：</strong></p>
+<ol>
+<li><strong>工具方法必须无副作用或严格幂等。</strong>前面时序图里工具可能被模型在多轮中重复调用，Spring AI 的重试/重连也可能重放 tool message——如果是"扣款""发消息""创建订单"这种副作用方法，重复调用就是事故。生产要么做幂等键（从 tool_call_id 派生），要么把有副作用操作拆到工具外的人工确认流程。</li>
+<li><strong>永远不要信任模型传的参数。</strong>模型可能把 <code>"1 OR 1=1"</code> 传进 String 参数、把 <code>-1</code> 传进"数量"字段、把 <code>null</code> 传进必填项。<code>@ToolParam(required=true)</code> 只生成 schema 提示，不做校验；必须在方法内用 <code>Objects.requireNonNull</code>、Bean Validation、业务校验主动拦截，绝不直接拼 SQL/传下游。</li>
+<li><strong>工具错误要返回结构化错误，不要抛异常。</strong>把 <code>throw new IllegalArgumentException("除数不能为0")</code> 改成 <code>return new ToolError("DIVIDE_BY_ZERO", "除数 b 不能为 0，请用户重新输入")</code>。抛异常会被 Spring AI 转成一条错误消息塞回模型——有些模型不会"再试一次"，直接把异常堆栈甩给用户；返回结构化错误 record，模型能基于错误码自然语言解释并引导用户。</li>
+<li><strong>description 禁止中英混杂、禁止缩写、禁止业务黑话。</strong>"查询 OID 对应 ord 的 payAmt"这种描述在中文模型里命中率极低。统一中文、完整词、写清"什么时候用、做什么、返回什么"。</li>
+<li><strong>不要在 Controller 层 defaultTools 把所有工具全暴露。</strong>工具是按"对话场景"注册的，不是按 Spring Bean 全局共享。例如"退款工具"只应出现在售后客服 ChatClient 里；如果所有对话都注册了它，任何用户都可能通过诱导让模型调用退款。按接口/场景<strong>白名单</strong>注册。</li>
+<li><strong>工具调用必须打审计日志。</strong>记录 <code>tool_call_id</code>、方法名、参数（脱敏后）、返回值、耗时、用户 ID、会话 ID。没有审计日志，出了"模型乱调工具"事故无从排查。建议用 AOP 环绕 <code>@Tool</code> 方法统一埋点。</li>
+</ol>
+</div>
 
 <section><h2>动手</h2>
 <div class="practice"><ol>
@@ -44,7 +204,18 @@ ChatClient c = builder.defaultTools(new CalculatorTools()).build();</code></pre>
 # 预期：{"success":true,"answer":"...模型返回的中文回答..."}</code></pre></li>
   </ol></div>
   <h4>⚡ 3 条命令快速验证 09-calculator-tool</h4>
-  <pre><code>curl -X POST http://localhost:8088/calc/ask -H 'Content-Type: application/json' -d '{"question":"(3.14 + 2.86) * 5 等于多少"}'</code></pre>
+  <pre><code># 1) 简单四则运算，观察模型调用 add/subtract/multiply/divide 工具
+curl -X POST http://localhost:8088/calc/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"(3.14 + 2.86) * 5 等于多少"}'
+# 2) 多步运算，模型会连续调用工具
+curl -X POST http://localhost:8088/calc/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"1024 除以 8，再加 256，再乘以 2 是多少"}'
+# 3) 自然语言描述的计算题，验证模型能否正确抽取参数
+curl -X POST http://localhost:8088/calc/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"一个商品原价 199 元，打 8 折后再减 20，到手价是多少"}'</code></pre>
 </section>
 
 <section><h2>检索练习</h2>
@@ -61,5 +232,18 @@ ChatClient c = builder.defaultTools(new CalculatorTools()).build();</code></pre>
 <div class="quiz-options"><button data-option="A">运行更快</button><button data-option="B">单一职责好选好测</button><button data-option="C">占用 token 少</button></div><p class="quiz-feedback small"></p></div>
 </section>
 
-<section><h2>课后问答</h2><ul><li>"多个 Tool 描述冲突会怎样？"</li><li>"Tool 抛异常时模型看到什么？"</li></ul></section>
+<section><h2>主资料</h2>
+<ul>
+<li>Spring AI 官方 Tool Calling 文档：<a href="https://docs.spring.io/spring-ai/reference/api/tools.html" target="_blank" rel="noopener">docs.spring.io/spring-ai/reference/api/tools.html</a> —— @Tool / @ToolParam / ToolCallback 机制、工具循环的官方说明。</li>
+<li>Spring AI Alibaba 仓库（含本 demo 源码）：<a href="https://github.com/alibaba/spring-ai-alibaba" target="_blank" rel="noopener">github.com/alibaba/spring-ai-alibaba</a> —— DashScope 适配、社区 example。</li>
+<li>阿里云百炼 / DashScope Function Calling 文档：<a href="https://help.aliyun.com/zh/model-studio/user-guide/function-calling" target="_blank" rel="noopener">help.aliyun.com/zh/model-studio/user-guide/function-calling</a> —— 通义千问系列模型的工具调用参数与限制。</li>
+<li>java2ai.com 中文教程站：<a href="https://java2ai.com" target="_blank" rel="noopener">java2ai.com</a> —— Spring AI Alibaba 中文 API 速查与示例。</li>
+</ul>
+</section>
+
+<section><h2>课后问答</h2><ul>
+<li>"多个 Tool 描述冲突会怎样？"——模型会在几个工具之间随机选，或者每轮交替用，表现为结果反复波动。解决：合并/差异化 description，不要让两个工具在同一场景都"看起来合适"。</li>
+<li>"Tool 抛异常时模型看到什么？"——Spring AI 默认把异常 message 包成 tool message 回传，模型通常直接把错误原文说给用户，或者干脆终止回答。生产改为返回结构化错误 record，让模型可以"理解错误并引导用户"。</li>
+<li>"工具调用次数过多导致延迟高怎么办？"——三个方向：①拆原子工具改为"业务复合工具"（一次 tool call 完成多步）；②在 System Prompt 里明确"能一次性算完就一次调用，不要分步"；③评估换用 tool-calling 更强的模型（qwen-max 比 turbo 少走往返）。</li>
+</ul></section>
 </main></body></html>

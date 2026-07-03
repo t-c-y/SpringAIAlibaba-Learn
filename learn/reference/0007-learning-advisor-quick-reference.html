@@ -1,28 +1,70 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>学习顾问快速参考</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
-<header><div class="eyebrow">Reference · Spring AI Alibaba</div><h1>短期 + 长期记忆快速参考</h1></header>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advisor 拦截器链快速参考</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <link rel="stylesheet" href="../assets/nav.css">  <script src="../assets/nav.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Reference · Spring AI Alibaba</div>
+    <h1>Advisor 拦截器链快速参考</h1>
+    <p class="small">对应第 0007 课。把这张卡打印出来放在手边，做练习和排查时随时翻。</p>
+  </header>
 
-<section><h2>分工原则</h2>
-<ul>
-<li>短期：随时间失效的，例如"上一句话说了什么"。</li>
-<li>长期：稳定属性，例如姓名、岗位、偏好。</li>
-<li>写入长期一定要走确认路径（不能让模型说改就改）。</li>
-</ul></section>
+  <section>
+    <h2>API 速查表</h2>
+    <table>
+      <thead><tr><th>API / 概念</th><th>一句话说明</th></tr></thead>
+      <tbody>
+      <tr><td><code>CallAdvisor / StreamAdvisor</code></td><td>Advisor 两个接口；分别拦截同步和流式</td></tr>
+      <tr><td><code>getOrder()</code></td><td>顺序，值越小越先执行（像 Spring MVC Interceptor）</td></tr>
+      <tr><td><code>.advisors(a,b,c)</code></td><td>单次调用添加 Advisor</td></tr>
+      <tr><td><code>.defaultAdvisors(a,b)</code></td><td>构建时添加，所有调用生效</td></tr>
+      <tr><td><code>advisorRequest.param(k,v)</code></td><td>在 Advisor 内读取调用方传入的参数</td></tr>
+      <tr><td><code>UserContext / ThreadLocal</code></td><td>在 Controller 入口塞 ThreadLocal，Advisor 和 Tool 都能读</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-<section><h2>典型字段</h2>
-<pre><code>record LearnerProfile(
-  String userId,
-  String name,
-  String targetRole,
-  List&lt;String&gt; mastered,
-  List&lt;String&gt; learning,
-  String weeklyBudgetHours) {}</code></pre></section>
+  <section>
+    <h2>典型代码模板</h2>
+    <pre><code>public Object advise(AdvisorRequest req, AdvisorChain chain) {
+  // 请求前：往 System Prompt 追加画像
+  var augmented = addProfileToSystem(req, profileStore.get(req.param("userId")));
+  var resp = chain.nextCall(augmented);
+  // 响应后：审计日志、结果改写
+  return resp;
+}</code></pre>
+  </section>
 
-<section><h2>演进路径</h2>
-<ol>
-<li>字段化画像（本课）。</li>
-<li>知识条目 + 向量检索（RAG 阶段）。</li>
-<li>结构化画像 + 事件日志（生产平台阶段）。</li>
-</ol></section>
-</main></body></html>
+  <section>
+    <h2>踩坑清单</h2>
+    <div class="callout warning">
+    <ul>
+      <li>Advisor 顺序错乱会让 System Prompt 被覆盖，建议显式 @Order 注解</li>
+      <li>ThreadLocal 必须在 finally 里 clear()，否则线程池复用泄漏用户</li>
+      <li>Advisor 里不要做耗时 I/O（DB/外部 API），会拉长所有调用延迟</li>
+      <li>Advisor 抛异常会终止调用链，注意 try/catch 和错误处理</li>
+      <li>同名 Advisor param 后写的会覆盖先写的</li>
+      <li>StreamAdvisor 和 CallAdvisor 要双写（如果 Advisor 既支持同步也支持流式）</li>
+    </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>自检问题</h2>
+    <p>合上课件，能回答所有问题就算过关。任何一个答不上来，回到课程对应 section 重看。</p>
+    <ol>
+      <li>会写一个自定义 Advisor 吗？</li>
+      <li>知道 getOrder() 的作用吗？</li>
+      <li>会用 param() 传参吗？</li>
+      <li>ThreadLocal 泄漏风险了解吗？</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>
