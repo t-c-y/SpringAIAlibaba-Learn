@@ -36,7 +36,7 @@ public class ChatController {
     private final String apiKey;
 
     public ChatController(ChatClient.Builder chatClientBuilder,
-                          @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-plus}") String model,
+                          @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-max}") String model,
                           @Value("${spring.ai.dashscope.api-key:}") String apiKey) {
         this.chatClient = chatClientBuilder
                 .defaultSystem("""

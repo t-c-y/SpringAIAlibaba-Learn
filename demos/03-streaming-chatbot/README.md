@@ -74,7 +74,7 @@ export DASHSCOPE_API_KEY=你的 API Key
 可选：配置模型名和读取超时时间。
 
 ```bash
-export DASHSCOPE_CHAT_MODEL=qwen-plus
+export DASHSCOPE_CHAT_MODEL=qwen3.7-max
 export DASHSCOPE_READ_TIMEOUT=180000
 ```
 
@@ -126,7 +126,7 @@ curl 'http://localhost:8082/chat/status'
 
 ```json
 {
-  "model": "qwen-plus",
+  "model": "qwen3.7-max",
   "apiKeyConfigured": true,
   "apiKeyPreview": "sk-* ****abcd",
   "mode": "streaming-sse",
@@ -278,7 +278,7 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:180000}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max}
 ```
 
 理解目的：

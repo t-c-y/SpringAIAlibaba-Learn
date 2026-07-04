@@ -160,7 +160,7 @@ public class PromptTemplateController {
 <div class="card"><h3>模型侧（与模板无关但每次都要配）</h3>
 <table><thead><tr><th>参数</th><th>默认/推荐</th><th>何时调</th></tr></thead><tbody>
 <tr><td><code>spring.ai.dashscope.api-key</code></td><td>空（必填）</td><td>通过环境变量 <code>DASHSCOPE_API_KEY</code> 注入，不要写死到 yml</td></tr>
-<tr><td><code>spring.ai.dashscope.chat.options.model</code></td><td><code>qwen-plus</code></td><td>要更便宜选 <code>qwen-turbo</code>，更强推理选 <code>qwen-max</code></td></tr>
+<tr><td><code>spring.ai.dashscope.chat.options.model</code></td><td><code>qwen3.7-max</code></td><td>要更便宜选 <code>qwen-turbo</code>/<code>qwen-plus</code>，更强推理选 <code>qwen-max</code></td></tr>
 <tr><td><code>temperature</code></td><td>0.7（问答）/0.1（结构化）</td><td>课程生成/客服用 0.3-0.5 稳一点</td></tr>
 </tbody></table></div>
 <div class="card"><h3>模板侧（Spring AI 没有专门开关）</h3>

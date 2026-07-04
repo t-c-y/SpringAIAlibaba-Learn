@@ -12,6 +12,6 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max}
           # 提示词工程阶段建议保持较低温度，让输出更贴近 System Prompt 的结构约束。
           temperature: 0.3

@@ -13,7 +13,7 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max}
           temperature: 0.1
 
 mcp:

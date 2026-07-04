@@ -160,7 +160,7 @@ public class OrderAgentController {
 <thead><tr><th>配置项 / API</th><th>默认</th><th>何时调</th></tr></thead>
 <tbody>
 <tr><td><code>spring.ai.dashscope.api-key</code></td><td>无</td><td>必须配置，建议走环境变量或配置中心，<strong>不要</strong>硬编码到 git</td></tr>
-<tr><td><code>spring.ai.dashscope.chat.options.model</code></td><td>qwen-plus</td><td>工具调用场景推荐 <code>qwen-max</code> / <code>qwen-plus</code>；长上下文列表查询可试 <code>qwen-long</code></td></tr>
+<tr><td><code>spring.ai.dashscope.chat.options.model</code></td><td>qwen3.7-max</td><td>工具调用场景推荐 <code>qwen-max</code> / <code>qwen3.7-max</code>；长上下文列表查询可试 <code>qwen-long</code></td></tr>
 <tr><td><code>ChatClient.Builder.defaultTools(Object...)</code></td><td>空</td><td>注册所有登录用户通用的工具 Bean</td></tr>
 <tr><td><code>ChatClient.prompt(...).tools(Object...)</code></td><td>空</td><td>单次调用动态追加/覆盖工具，按角色裁剪时使用</td></tr>
 <tr><td><code>@Tool(description=...)</code></td><td>必填</td><td>description 直接决定模型是否选这个工具、参数怎么填，必须写清"谁能查/能做什么/返回什么"</td></tr>

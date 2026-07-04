@@ -110,7 +110,7 @@ public class PromptAssistantConfig {
             // ② defaultAdvisors：可叠加日志/记忆（后续课程讲）
             // ③ defaultOptions：模型参数固定化，降低随机性
             .defaultOptions(DashScopeChatOptions.builder()
-                    .withModel("qwen-plus")
+                    .withModel("qwen3.7-max")
                     .withTemperature(0.3)   // 低温度 = 更少发散
                     .withTopP(0.8)
                     .build())
@@ -225,7 +225,7 @@ public Map&lt;String,Object&gt; lesson(@RequestBody LessonRequest req) {
     <p>启动：<code>cd demos/04-prompt-assistant &amp;&amp; mvn spring-boot:run</code></p>
     <div class="practice"><ol>
       <li><p>状态检查（mode=prompt-engineering）</p><pre><code>curl http://localhost:8083/prompt/status
-# 预期：{"model":"qwen3.7-plus","apiKeyConfigured":true,...}</code></pre></li>
+# 预期：{"model":"qwen3.7-max","apiKeyConfigured":true,...}</code></pre></li>
       <li><p>带四段式 System Prompt 的问答</p><pre><code>curl -X POST http://localhost:8083/prompt/ask \
   -H 'Content-Type: application/json'\
   -d '{"question":"什么是 System Prompt，它和用户问题有什么区别"}'

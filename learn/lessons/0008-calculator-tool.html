@@ -154,7 +154,7 @@ public ChatClient calculatorClient(ChatClient.Builder builder,
 <section><h2>关键参数与配置</h2>
 <div class="grid">
 <div class="card"><h3>spring.ai.dashscope.api-key</h3><p><strong>默认：</strong>无<br><strong>何时调：</strong>必填。建议走环境变量 <code>DASHSCOPE_API_KEY</code>，别写进 yml。</p></div>
-<div class="card"><h3>spring.ai.dashscope.chat.options.model</h3><p><strong>默认：</strong>qwen-plus<br><strong>何时调：</strong>Tool Calling 推荐 <code>qwen-max</code>/<code>qwen-plus</code>；qwen-turbo 在多步工具上稳定性差。</p></div>
+<div class="card"><h3>spring.ai.dashscope.chat.options.model</h3><p><strong>默认：</strong>qwen3.7-max<br><strong>何时调：</strong>Tool Calling 推荐 <code>qwen-max</code>/<code>qwen3.7-max</code>；qwen-turbo / qwen-plus 在多步工具上稳定性稍差。</p></div>
 <div class="card"><h3>temperature</h3><p><strong>默认：</strong>0.7<br><strong>何时调：</strong>Tool 场景一律降到 <strong>0.1~0.3</strong>，降低乱选工具、乱造参数的概率。</p></div>
 <div class="card"><h3>defaultTools(tools...)</h3><p><strong>默认：</strong>空<br><strong>何时调：</strong>注册 @Tool 对象。生产环境不要无脑 defaultTools 全部工具，按接口最小集注册。</p></div>
 <div class="card"><h3>toolCallBack / 工具返回值类型</h3><p><strong>默认：</strong>toString 序列化<br><strong>何时调：</strong>建议返回 <code>record</code> 或明确结构的 JSON 字符串；抛异常会中断循环。</p></div>

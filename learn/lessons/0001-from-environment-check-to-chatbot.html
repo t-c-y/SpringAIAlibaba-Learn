@@ -177,7 +177,7 @@ public class ChatController {
                 .user(request.question())    // 用户问题
                 .call()                      // 同步调用，阻塞等待
                 .content();                  // 取文本回答（抛异常时此处会冒泡）
-        return new ChatResponse(true, "qwen3.7-plus",
+        return new ChatResponse(true, "qwen3.7-max",
                 request.question(), answer);
     }
 
@@ -189,7 +189,7 @@ public class ChatController {
 
   <section>
     <h2>关键配置项</h2>
-    <p>Demo 里用了 <code>${DASHSCOPE_CHAT_MODEL:qwen3.7-plus}</code> 这种写法。它是 Spring 占位符语法：先读环境变量 / 系统属性 <code>DASHSCOPE_CHAT_MODEL</code>，读不到就用冒号后的默认值 <code>qwen3.7-plus</code>。企业里通常用环境变量（容器、K8s ConfigMap/Secret、CI）覆盖默认值，本地开发则用默认值直接跑。</p>
+    <p>Demo 里用了 <code>${DASHSCOPE_CHAT_MODEL:qwen3.7-max}</code> 这种写法。它是 Spring 占位符语法：先读环境变量 / 系统属性 <code>DASHSCOPE_CHAT_MODEL</code>，读不到就用冒号后的默认值 <code>qwen3.7-max</code>。企业里通常用环境变量（容器、K8s ConfigMap/Secret、CI）覆盖默认值，本地开发则用默认值直接跑。</p>
 
     <table>
       <thead>
@@ -204,9 +204,9 @@ public class ChatController {
         </tr>
         <tr>
           <td><code>spring.ai.dashscope.chat.options.model</code></td>
-          <td><code>${DASHSCOPE_CHAT_MODEL:qwen-plus}</code></td>
-          <td><code>qwen-plus</code></td>
-          <td>要切更强模型（qwen-max）、更快更便宜模型（qwen-turbo）或多模态时改</td>
+          <td><code>${DASHSCOPE_CHAT_MODEL:qwen3.7-max}</code></td>
+          <td><code>qwen3.7-max</code></td>
+          <td>要切更强模型（qwen-max）、更快更便宜模型（qwen-turbo / qwen-plus）或多模态时改</td>
         </tr>
         <tr>
           <td><code>spring.ai.dashscope.chat.options.temperature</code></td>
@@ -262,9 +262,9 @@ public class ChatController {
     <p>启动：<code>cd demos/01-environment-check &amp;&amp; mvn spring-boot:run</code></p>
     <div class="practice"><ol>
       <li><p>环境状态检查（不调模型）：返回应用名、模型、API Key 配置状态</p><pre><code>curl http://localhost:8080/env/status
-# 预期：{"model":"qwen3.7-plus","apiKeyConfigured":true,...}</code></pre></li>
+# 预期：{"model":"qwen3.7-max","apiKeyConfigured":true,...}</code></pre></li>
       <li><p>模型连通性检查：调用一次模型，返回 success/content/error</p><pre><code>curl http://localhost:8080/env/ping?message=请只回答OK
-# 预期：{"success":true,"content":"OK","model":"qwen3.7-plus"}</code></pre></li>
+# 预期：{"success":true,"content":"OK","model":"qwen3.7-max"}</code></pre></li>
     </ol></div>
     <h4>⚡ 3 条命令快速验证 01-environment-check</h4>
     <pre><code># 1) 环境状态检查（API Key/模型是否就绪）
@@ -277,7 +277,7 @@ curl 'http://localhost:8080/env/ping?message=请只回答：Spring-AI-Alibaba-OK
     <p>启动：<code>cd demos/02-chatbot &amp;&amp; mvn spring-boot:run</code></p>
     <div class="practice"><ol>
       <li><p>ChatBot 状态检查</p><pre><code>curl http://localhost:8081/chat/status
-# 预期：{"model":"qwen3.7-plus","apiKeyConfigured":true,...}</code></pre></li>
+# 预期：{"model":"qwen3.7-max","apiKeyConfigured":true,...}</code></pre></li>
       <li><p>同步问答，返回 {success,model,question,answer}</p><pre><code>curl -X POST http://localhost:8081/chat/ask \
   -H 'Content-Type: application/json'\
   -d '{"question":"请用三点说明 Spring AI Alibaba 在企业开发中的价值"}'

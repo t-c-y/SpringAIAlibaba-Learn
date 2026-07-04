@@ -273,7 +273,7 @@ cd demos/01-environment-check
 
 ```bash
 export DASHSCOPE_API_KEY=你的 API Key
-export DASHSCOPE_CHAT_MODEL=qwen-plus
+export DASHSCOPE_CHAT_MODEL=qwen3.7-max
 ```
 
 启动应用：

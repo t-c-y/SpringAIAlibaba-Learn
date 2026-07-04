@@ -45,7 +45,7 @@
     <div class="callout warning">
     <ul>
       <li>API Key 不要写在 application.yml，优先环境变量 DASHSCOPE_API_KEY</li>
-      <li>模型名用 ${DASHSCOPE_CHAT_MODEL:qwen3.7-plus} 占位符支持覆盖</li>
+      <li>模型名用 ${DASHSCOPE_CHAT_MODEL:qwen3.7-max} 占位符支持覆盖</li>
       <li>defaultSystem 里的规则所有调用都会遵守，不要写死版本相关的业务数字</li>
       <li>调用 LLM 要设置超时（默认 30s 在弱网下可能不够）</li>
       <li>ChatClient.Builder 是 Spring Boot Starter 自动注册的 Bean，不要自己 new ChatClient</li>

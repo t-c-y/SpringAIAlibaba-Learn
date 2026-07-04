@@ -59,7 +59,9 @@ public class EnvironmentCheckController {
      * 当前使用的聊天模型名称。
      *
      * 来源：application.yml 中的 spring.ai.dashscope.chat.options.model。
-     * 默认值通常可以使用 qwen3.7-plus，也可以通过环境变量 DASHSCOPE_CHAT_MODEL 覆盖。
+     * 默认值为 qwen3.7-max，也可以通过环境变量 DASHSCOPE_CHAT_MODEL 覆盖。
+     * 注意：模型名必须与百炼控制台已开通的模型完全一致，写错（例如 qwen3.7-plus）
+     * 会触发 HTTP 400 "url error, please check url"。
      */
     private final String model;
 
@@ -83,7 +85,7 @@ public class EnvironmentCheckController {
     public EnvironmentCheckController(ChatClient.Builder chatClientBuilder,
                                       @Value("${spring.application.name}") String applicationName,
                                       @Value("${spring.ai.dashscope.api-key:}") String apiKey,
-                                      @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-plus}") String model) {
+                                      @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-max}") String model) {
         this.chatClient = chatClientBuilder
                 // defaultSystem 用于设置默认系统提示词。
                 // System Prompt 通常用于定义模型身份、行为边界和回答风格。

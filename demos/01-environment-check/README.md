@@ -85,7 +85,7 @@ DASHSCOPE_CHAT_MODEL
 如果不配置，默认使用：
 
 ```text
-qwen-plus
+qwen3.7-max
 ```
 
 ### 5. ChatClient
@@ -131,7 +131,7 @@ export DASHSCOPE_API_KEY=你的 API Key
 可选：配置模型名和读取超时时间。
 
 ```bash
-export DASHSCOPE_CHAT_MODEL=qwen-plus
+export DASHSCOPE_CHAT_MODEL=qwen3.7-max
 export DASHSCOPE_READ_TIMEOUT=120000
 ```
 
@@ -184,7 +184,7 @@ curl 'http://localhost:8080/env/status'
 ```json
 {
   "applicationName": "spring-ai-alibaba-environment-check-demo",
-  "model": "qwen-plus",
+  "model": "qwen3.7-max",
   "apiKeyConfigured": true,
   "apiKeyPreview": "sk-* ****abcd",
   "message": "Spring AI Alibaba DashScope configuration loaded",
@@ -230,7 +230,7 @@ curl 'http://localhost:8080/env/ping?message=请用一句话介绍 Spring AI Ali
 ```json
 {
   "success": true,
-  "model": "qwen-plus",
+  "model": "qwen3.7-max",
   "content": "OK",
   "error": null
 }
@@ -241,7 +241,7 @@ curl 'http://localhost:8080/env/ping?message=请用一句话介绍 Spring AI Ali
 ```json
 {
   "success": false,
-  "model": "qwen-plus",
+  "model": "qwen3.7-max",
   "content": null,
   "error": "DASHSCOPE_API_KEY is not configured"
 }
@@ -317,7 +317,7 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:60000}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max}
 ```
 
 理解目的：
@@ -558,7 +558,7 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:60000}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max}
 ```
 
 含义是：
@@ -572,7 +572,7 @@ Controller 中通过 `@Value` 读取配置：
 
 ```java
 @Value("${spring.ai.dashscope.api-key:}") String apiKey
-@Value("${spring.ai.dashscope.chat.options.model:qwen-plus}") String model
+@Value("${spring.ai.dashscope.chat.options.model:qwen3.7-max}") String model
 ```
 
 Spring Boot 启动时会把配置值注入到构造方法参数中。

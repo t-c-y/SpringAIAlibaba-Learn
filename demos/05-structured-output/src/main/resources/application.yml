@@ -12,6 +12,6 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:120000}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max}
           # 结构化输出场景强烈建议低温度，避免模型自由发挥破坏 JSON 结构。
           temperature: 0.1

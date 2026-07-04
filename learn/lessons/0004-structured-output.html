@@ -37,7 +37,7 @@
 └────────────────────────────────┬────────────────────────────────┘
                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ 4. 模型(qwen-plus / qwen3.7-plus 等)按 Schema 生成 JSON 文本       │
+│ 4. 模型(qwen-plus / qwen3.7-max 等)按 Schema 生成 JSON 文本        │
 │    (支持 structured output 的模型会严格遵守 key/类型)             │
 └────────────────────────────────┬────────────────────────────────┘
                                  ▼
@@ -48,7 +48,7 @@
 
 <p>为什么要把 Schema 注入 Prompt？因为大模型本质上是在"下一个 token 预测"，只有当它在生成的每一步都"看到"Schema 约束，才不会在输出中凭空加字段、换字段名、混入自然语言解释。支持"结构化输出 / JSON Mode"的模型（如 Qwen-Plus、Qwen3 系列、GPT-4o 等）会在服务端再做一次强约束，效果更好；不支持的模型则仅靠 Prompt 引导，稳定性差一些。</p>
 
-<p>这也解释了两件事：(1) <strong>字段名和类型必须在 Java 侧写清楚</strong>——它们就是 Schema 的来源；(2) <strong>temperature 必须低</strong>——温度高时采样空间大，模型更容易"改写"key 名或加多余字段，即便有 Schema 约束也会漏。百炼平台的 qwen3.7-plus、qwen-plus 对 JSON Schema 支持度较好，结构化输出稳定性是经过生产验证的。</p>
+<p>这也解释了两件事：(1) <strong>字段名和类型必须在 Java 侧写清楚</strong>——它们就是 Schema 的来源；(2) <strong>temperature 必须低</strong>——温度高时采样空间大，模型更容易"改写"key 名或加多余字段，即便有 Schema 约束也会漏。百炼平台的 qwen3.7-max、qwen-plus、qwen-max 对 JSON Schema 支持度较好，结构化输出稳定性是经过生产验证的。</p>
 </section>
 
 <section>

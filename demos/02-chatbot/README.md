@@ -73,7 +73,7 @@ export DASHSCOPE_API_KEY=你的 API Key
 可选：配置模型名和读取超时时间。
 
 ```bash
-export DASHSCOPE_CHAT_MODEL=qwen-plus
+export DASHSCOPE_CHAT_MODEL=qwen3.7-max
 export DASHSCOPE_READ_TIMEOUT=120000
 ```
 
@@ -125,7 +125,7 @@ curl 'http://localhost:8081/chat/status'
 
 ```json
 {
-  "model": "qwen-plus",
+  "model": "qwen3.7-max",
   "apiKeyConfigured": true,
   "apiKeyPreview": "sk-* ****abcd",
   "message": "ChatBot demo is ready",
@@ -157,7 +157,7 @@ curl -X POST 'http://localhost:8081/chat/ask' \
 ```json
 {
   "success": true,
-  "model": "qwen-plus",
+  "model": "qwen3.7-max",
   "question": "请用三点说明 Spring AI Alibaba 在企业开发中的价值",
   "answer": "...",
   "error": null
@@ -219,7 +219,7 @@ spring:
       read-timeout: ${DASHSCOPE_READ_TIMEOUT:60000}
       chat:
         options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen3.7-max}
 ```
 
 你要形成习惯：
