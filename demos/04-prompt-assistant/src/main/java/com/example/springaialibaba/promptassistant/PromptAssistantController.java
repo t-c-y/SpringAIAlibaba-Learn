@@ -34,6 +34,9 @@ public class PromptAssistantController {
     public PromptAssistantController(ChatClient.Builder builder,
                                      @Value("${spring.ai.dashscope.chat.options.model:qwen3.7-max}") String model,
                                      @Value("${spring.ai.dashscope.api-key:}") String apiKey) {
+        // rawClient 不设 defaultSystem，模型会用自己的默认语气回答，便于对比。
+        this.rawClient = builder.build();
+
         this.assistantClient = builder
                 .defaultSystem("""
                         # 角色
@@ -53,9 +56,6 @@ public class PromptAssistantController {
                         - 不回答与 Java / Spring / AI Agent 无关的问题，礼貌拒绝并说明原因。
                         """)
                 .build();
-
-        // rawClient 不设 defaultSystem，模型会用自己的默认语气回答，便于对比。
-        this.rawClient = builder.build();
 
         this.model = model;
         this.apiKey = apiKey;
