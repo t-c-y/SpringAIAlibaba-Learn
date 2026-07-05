@@ -4,32 +4,32 @@
 
   // ========== 目录数据 ==========
   var NAV = [
-    { group: "基础入门", items: [
+    { group: "基础入门", sub: "环境检查 · ChatBot · 流式 SSE", items: [
       {n:"0001", title:"从环境检查到最小 ChatBot", file:"0001-from-environment-check-to-chatbot.html", ref:"0001-chatclient-quick-reference.html"},
       {n:"0002", title:"流式 ChatBot 与 SSE",      file:"0002-streaming-chatbot-sse.html",     ref:"0002-streaming-chatbot-sse-quick-reference.html"},
-      {n:"0003", title:"Prompt 学习助手",           file:"0003-prompt-assistant.html",          ref:"0003-prompt-assistant-quick-reference.html"},
     ]},
-    { group: "Prompt 工程", items: [
+    { group: "Prompt 工程", sub: "System Prompt · 结构化输出 · 模板", items: [
+      {n:"0003", title:"Prompt 学习助手",           file:"0003-prompt-assistant.html",          ref:"0003-prompt-assistant-quick-reference.html"},
       {n:"0004", title:"结构化 JSON 输出",         file:"0004-structured-output.html",         ref:"0004-structured-output-quick-reference.html"},
       {n:"0005", title:"Prompt 模板管理",          file:"0005-prompt-template.html",          ref:"0005-prompt-template-quick-reference.html"},
+    ]},
+    { group: "对话记忆", sub: "Chat Memory · 顾问上下文", items: [
       {n:"0006", title:"多轮对话 Memory",          file:"0006-chat-memory.html",              ref:"0006-chat-memory-quick-reference.html"},
-    ]},
-    { group: "记忆", items: [
       {n:"0007", title:"学习顾问 Memory",          file:"0007-learning-advisor.html",         ref:"0007-learning-advisor-quick-reference.html"},
-      {n:"0008", title:"Tool Calling 入门：计算器", file:"0008-calculator-tool.html",         ref:"0008-calculator-tool-quick-reference.html"},
     ]},
-    { group: "Tool Calling", items: [
+    { group: "Tool Calling", sub: "计算器 · 外部 API · 订单 Agent", items: [
+      {n:"0008", title:"Tool Calling 入门：计算器", file:"0008-calculator-tool.html",         ref:"0008-calculator-tool-quick-reference.html"},
       {n:"0009", title:"天气工具：外部 API 风格",   file:"0009-weather-tool.html",             ref:"0009-weather-tool-quick-reference.html"},
       {n:"0010", title:"订单查询 Agent",           file:"0010-order-agent.html",              ref:"0010-order-agent-quick-reference.html"},
-      {n:"0011", title:"Markdown 知识库 RAG",      file:"0011-markdown-rag.html",             ref:"0011-markdown-rag-quick-reference.html"},
     ]},
-    { group: "RAG 与综合 Agent", items: [
+    { group: "RAG 与综合 Agent", sub: "Markdown · PDF · 调优 · 客服 · Graph 状态机", items: [
+      {n:"0011", title:"Markdown 知识库 RAG",      file:"0011-markdown-rag.html",             ref:"0011-markdown-rag-quick-reference.html"},
       {n:"0012", title:"PDF 知识库 RAG",           file:"0012-pdf-rag.html",                  ref:"0012-pdf-rag-quick-reference.html"},
       {n:"0013", title:"RAG 参数调优",             file:"0013-rag-tuning.html",               ref:"0013-rag-tuning-quick-reference.html"},
       {n:"0014", title:"智能客服 Agent 综合",       file:"0014-customer-service-agent.html",   ref:"0014-customer-service-agent-quick-reference.html"},
       {n:"0015", title:"Graph 客服 Agent",         file:"0015-graph-agent.html",              ref:"0015-graph-agent-quick-reference.html"},
     ]},
-    { group: "进阶：协议、观测、平台", items: [
+    { group: "进阶：协议、观测、平台", sub: "MCP · 评测 · 平台原型", items: [
       {n:"0016", title:"MCP 工具集成",             file:"0016-mcp.html",                      ref:"0016-mcp-quick-reference.html"},
       {n:"0017", title:"Agent 日志与评测",         file:"0017-observability-eval.html",       ref:"0017-observability-eval-quick-reference.html"},
       {n:"0018", title:"企业级 Agent 平台原型",    file:"0018-agent-platform.html",           ref:"0018-agent-platform-quick-reference.html"},
@@ -69,7 +69,7 @@
   NAV.forEach(function(g, gi){
     var opened = openByDefault ? ' open' : '';
     treeHtml += '<details' + opened + '>';
-    treeHtml += '<summary>' + escapeHtml(g.group) + '</summary>';
+    treeHtml += '<summary>' + escapeHtml(g.group) + (g.sub ? ' <span class="nav-sub">' + escapeHtml(g.sub) + '</span>' : '') + '</summary>';
     treeHtml += '<ul>';
     g.items.forEach(function(it){
       var cls = '';

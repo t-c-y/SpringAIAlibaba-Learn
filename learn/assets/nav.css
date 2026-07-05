@@ -110,6 +110,15 @@ body.saa-nav-open #saa-nav-toggle { left: 300px; }
 }
 .saa-nav-tree details[open] > summary::before { transform: rotate(90deg); }
 .saa-nav-tree summary:hover { background: var(--nav-line-soft, #eef2f7); }
+.saa-nav-tree summary .nav-sub {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--nav-muted, #64748b);
+  margin-left: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .saa-nav-tree ul {
   list-style: none;
